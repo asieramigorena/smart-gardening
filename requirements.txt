@@ -1,0 +1,7 @@
+ismn
+pandas
+pyarrow
+requests
+python-dotenv
+numpy
+pillow
