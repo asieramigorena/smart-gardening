@@ -1,42 +1,71 @@
 name: Python
 
+# No `paths` filter on the triggers: a workflow skipped by `paths` never reports a status,
+# which would block PRs if `Python / lint` is a required check. The `changes` job decides
+# instead, and a skipped `lint` job counts as passed.
 on:
   pull_request:
     branches: [dev, main]
-    paths:
-      - "node/**"
-      - "ML/**"
-      - ".github/workflows/python.yml"
   push:
     branches: [dev, main]
-    paths:
-      - "node/**"
-      - "ML/**"
-      - ".github/workflows/python.yml"
 
 permissions:
   contents: read
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  lint:
-    name: lint
+  changes:
+    name: changes
     runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read # list the files changed in the PR
+    outputs:
+      python: ${{ steps.filter.outputs.python }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Detect changes
+        id: filter
+        uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+        with:
+          # On push, compare with the previous commit of the same branch (default would be main).
+          # Ignored on pull_request, which uses the PR's changed files.
+          base: ${{ github.ref }}
+          filters: |
+            python:
+              - "node/**"
+              - "ML/**"
+              - ".github/workflows/python.yml"
+
+  lint:
+    name: lint
+    needs: changes
+    if: needs.changes.outputs.python == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
-          python-version: "3.11" # Raspberry Pi OS Bookworm
+          python-version: "3.11"
 
+      # Pinned so a new ruff release cannot break CI without a code change.
       - name: Install ruff
-        run: pip install ruff
+        run: pip install ruff==0.17.5
 
-      # Real errors only (syntax, undefined names, unused imports...), no style rules.
+      # Real errors only (syntax errors, undefined names, unused imports...), no style rules.
       - name: Lint
-        run: ruff check node ML --select E4,E7,E9,F
+        run: ruff check node ML --select E4,E7,E9,F --output-format=github
