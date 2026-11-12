@@ -1,0 +1,3 @@
+# Installed with --no-deps (see setup.sh): grove.py declares RPi.GPIO and rpi_ws281x as
+# dependencies, which do not work on the Pi 5; GPIO is provided by python3-rpi-lgpio (apt).
+Seeed-grove.py==0.8
