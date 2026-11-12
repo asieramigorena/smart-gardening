@@ -1,0 +1,227 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Garden Water Atlas</title>
+<link rel="stylesheet" href="vendor/leaflet.css">
+<link rel="stylesheet" href="vendor/uPlot.min.css">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="top">
+  <div class="brand">
+    <span class="brand-mark">◈</span>
+    <div>
+      <h1>Garden Water Atlas</h1>
+      <div class="sub" id="build-info">loading…</div>
+    </div>
+  </div>
+  <nav class="tabs" id="tabs">
+    <button data-tab="map" class="on">Map</button>
+    <button data-tab="series">Time series</button>
+    <button data-tab="cross">Cross-analysis</button>
+    <button data-tab="carpet">Carpet</button>
+    <button data-tab="skill">Forecast skill</button>
+  </nav>
+</header>
+
+<main>
+<!-- ============================== MAP ============================== -->
+<section class="tab on" id="tab-map">
+  <div class="map-layout">
+    <aside class="panel controls" id="map-controls">
+      <h2>Layer</h2>
+      <div class="seg" id="map-mode">
+        <button data-mode="single" class="on">Single variable</button>
+        <button data-mode="rgb">RGB composite</button>
+      </div>
+
+      <div id="single-controls">
+        <label>Variable <select id="map-var"></select></label>
+        <label>Colour map
+          <span class="row"><select id="map-cmap"></select>
+          <label class="chk"><input type="checkbox" id="map-cmap-rev"> reverse</label></span>
+        </label>
+      </div>
+
+      <div id="rgb-controls" hidden>
+        <label class="ch ch-r">R <select id="map-r"></select></label>
+        <label class="ch ch-g">G <select id="map-g"></select></label>
+        <label class="ch ch-b">B <select id="map-b"></select></label>
+        <label>Gamma <span class="row"><input type="range" id="map-gamma" min="0.3" max="2.5" step="0.05" value="0.8"><output id="map-gamma-out">0.80</output></span></label>
+        <p class="hint">Each variable drives one colour channel, scaled to its own range. White = all three high, black = all three low; mixed hues show which variables dominate.</p>
+      </div>
+
+      <label>Value range
+        <select id="map-range">
+          <option value="robust">Whole period, 2–98 %</option>
+          <option value="global">Whole period, min–max</option>
+          <option value="frame">This hour only</option>
+        </select>
+      </label>
+      <label>Sampling
+        <select id="map-interp">
+          <option value="bilinear">Interpolated</option>
+          <option value="nearest">Model grid cells</option>
+        </select>
+      </label>
+      <label>Data opacity <span class="row"><input type="range" id="map-opacity" min="0" max="1" step="0.05" value="0.85"><output id="map-opacity-out">0.85</output></span></label>
+
+      <h2>Overlays</h2>
+      <label class="chk"><input type="checkbox" id="ov-contours" checked> Isolines of the variable</label>
+      <label class="chk"><input type="checkbox" id="ov-wind"> Wind arrows</label>
+      <label class="chk"><input type="checkbox" id="ov-points"> Model grid points</label>
+      <label>Streets and labels <span class="row"><input type="range" id="ov-osm" min="0" max="1" step="0.05" value="0.45"><output id="ov-osm-out">0.45</output></span></label>
+
+      <h2>Terrain</h2>
+      <label class="chk"><input type="checkbox" id="tr-relief" checked> Shaded relief</label>
+      <label>Light
+        <select id="tr-light">
+          <option value="sun">Real sun position at this hour</option>
+          <option value="nw">Fixed, from the north-west</option>
+        </select>
+      </label>
+      <label class="chk"><input type="checkbox" id="tr-shadows" checked> Cast shadows</label>
+      <div class="readout" id="sun-readout"></div>
+
+    </aside>
+
+    <div class="map-main">
+      <div id="map"></div>
+      <div class="timebar panel">
+        <button id="t-prev" title="Previous hour">◀</button>
+        <button id="t-play" title="Play / pause">▶</button>
+        <button id="t-next" title="Next hour">▶|</button>
+        <input type="range" id="t-slider" min="0" max="1" step="1" value="0">
+        <select id="t-speed" title="Playback speed">
+          <option value="600">slow</option><option value="300" selected>normal</option><option value="120">fast</option>
+        </select>
+        <button id="t-now" title="Jump to the current hour">now</button>
+        <div class="tlabel"><span id="t-local"></span><span id="t-utc" class="muted"></span><span id="t-rel" class="tag"></span></div>
+      </div>
+      <div class="panel" id="point-panel">
+        <div class="panel-head"><h2>Point series</h2><span class="muted" id="point-title">click the map to pin a point</span></div>
+        <div id="point-charts"></div>
+      </div>
+    </div>
+
+    <aside class="panel probe">
+      <h2>Probe</h2>
+      <div class="readout" id="probe-pos">move the pointer over the map</div>
+      <table class="probe-table" id="probe-table"></table>
+      <p class="hint">Values are interpolated between model grid points (about 2 km apart). Terrain is from a 55 m elevation model. Soil variables are hidden over the sea.</p>
+    </aside>
+  </div>
+</section>
+
+<!-- =========================== TIME SERIES =========================== -->
+<section class="tab" id="tab-series">
+  <div class="split">
+    <aside class="panel controls">
+      <h2>Record</h2>
+      <label>Site <select id="ts-site"></select></label>
+      <label>Resolution
+        <select id="ts-res">
+          <option value="h">Hourly</option>
+          <option value="d">Daily (sum or mean)</option>
+          <option value="w">7-day running mean</option>
+        </select>
+      </label>
+      <div class="seg wrap" id="ts-range">
+        <button data-days="0" class="on">All</button><button data-days="365">1 y</button><button data-days="90">90 d</button><button data-days="30">30 d</button><button data-days="7">7 d</button>
+      </div>
+      <p class="hint">Drag across a chart to zoom; double-click to reset. Variables with the same unit share a panel.</p>
+      <h2>Variables</h2>
+      <div id="ts-vars" class="varlist"></div>
+    </aside>
+    <div class="charts" id="ts-charts"></div>
+  </div>
+</section>
+
+<!-- ========================== CROSS-ANALYSIS ========================== -->
+<section class="tab" id="tab-cross">
+  <div class="split">
+    <aside class="panel controls">
+      <h2>Variables</h2>
+      <label>Site <select id="cx-site"></select></label>
+      <label>X <select id="cx-x"></select></label>
+      <label>Y <select id="cx-y"></select></label>
+      <label>Colour by <select id="cx-c"></select></label>
+      <label>Shift Y by <span class="row"><input type="range" id="cx-lag" min="-72" max="72" step="1" value="0"><output id="cx-lag-out">0 h</output></span></label>
+      <label>Period
+        <select id="cx-period">
+          <option value="all">Whole record</option>
+          <option value="zoom">Current zoom of the Time series tab</option>
+        </select>
+      </label>
+      <label>Resolution
+        <select id="cx-res"><option value="h">Hourly</option><option value="d">Daily</option></select>
+      </label>
+      <div class="readout" id="cx-stats"></div>
+      <p class="hint">A positive shift compares X now with Y that many hours later. The lag curve shows where the relationship is strongest.</p>
+    </aside>
+    <div class="grid2">
+      <div class="panel"><div class="panel-head"><h2>Scatter</h2><span class="muted" id="cx-title"></span></div><div class="plot" id="cx-scatter"></div></div>
+      <div class="panel"><div class="panel-head"><h2>Correlation against lag</h2><span class="muted">Pearson r of X(t) with Y(t + lag)</span></div><div class="plot short" id="cx-lagplot"></div>
+        <div class="panel-head"><h2>Correlation matrix</h2><span class="muted">click a cell to load that pair</span></div><div class="plot" id="cx-matrix"></div></div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================= CARPET ============================= -->
+<section class="tab" id="tab-carpet">
+  <div class="split">
+    <aside class="panel controls">
+      <h2>Carpet plot</h2>
+      <label>Site <select id="cp-site"></select></label>
+      <label>Variable <select id="cp-var"></select></label>
+      <label>Colour map <select id="cp-cmap"></select></label>
+      <div class="readout" id="cp-readout">point at the plot</div>
+      <div id="cp-legend"></div>
+      <p class="hint">Each column is one day, each row one hour of the day (local standard time). Daily and seasonal rhythms show as bands; gaps are missing data.</p>
+    </aside>
+    <div class="charts">
+      <div class="panel"><div class="panel-head"><h2 id="cp-title">Hour of day against date</h2></div><div class="plot" id="cp-plot"></div></div>
+      <div class="panel"><div class="panel-head"><h2>Mean daily cycle by month</h2><span class="muted">one line per month</span></div><div class="plot short" id="cp-cycle"></div></div>
+    </div>
+  </div>
+</section>
+
+<!-- =========================== FORECAST SKILL =========================== -->
+<section class="tab" id="tab-skill">
+  <div class="split">
+    <aside class="panel controls">
+      <h2>Verification</h2>
+      <label>Site <select id="sk-site"></select></label>
+      <label>Variable <select id="sk-var"></select></label>
+      <label>Compare at
+        <select id="sk-res"><option value="d">Daily totals or means</option><option value="h">Hourly values</option></select>
+      </label>
+      <label>Scatter shows lead <select id="sk-lead"></select></label>
+      <label>Event threshold <span class="row"><input type="number" id="sk-thr" value="1" step="0.1" min="0"><span class="muted" id="sk-thr-unit"></span></span></label>
+      <p class="hint">Each forecast is compared with what was later observed for the same time. Bias is forecast minus observed. "Lead" is how many days ahead the forecast was issued.</p>
+      <div class="readout" id="sk-note"></div>
+    </aside>
+    <div class="grid2">
+      <div class="panel"><div class="panel-head"><h2>Scores by lead</h2></div><div id="sk-table"></div>
+        <div class="panel-head"><h2>Error distribution</h2><span class="muted">forecast − observed</span></div><div class="plot short" id="sk-hist"></div></div>
+      <div class="panel"><div class="panel-head"><h2>Forecast against observed</h2><span class="muted" id="sk-scatter-title"></span></div><div class="plot" id="sk-scatter"></div></div>
+      <div class="panel"><div class="panel-head"><h2>Mean absolute error by month</h2></div><div class="plot short" id="sk-month"></div></div>
+      <div class="panel"><div class="panel-head"><h2>Rain probability reliability</h2><span class="muted" id="sk-rel-note"></span></div><div class="plot short" id="sk-rel"></div></div>
+    </div>
+  </div>
+</section>
+</main>
+
+<div id="fatal" hidden></div>
+<script src="vendor/d3.min.js"></script>
+<script src="vendor/uPlot.iife.min.js"></script>
+<script src="vendor/leaflet.js"></script>
+<script src="js/core.js"></script>
+<script src="js/map.js"></script>
+<script src="js/series.js"></script>
+<script src="js/analysis.js"></script>
+<script src="js/main.js"></script>
+</body>
+</html>
