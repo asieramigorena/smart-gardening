@@ -22,6 +22,9 @@ const PALETTE = ['#4fd1c5', '#f6ad55', '#63b3ed', '#fc8181', '#b794f4', '#68d391
 
 /* ---------------- variable catalogue ---------------- */
 const CATALOG = [
+  [/need_72h/, { label: 'Irrigation need, next 72 h (ET₀ − rain)', unit: 'mm', cmap: 'BrBG', d: 1, diverging: true, rev: true }],
+  [/rain_next_24h/, { label: 'Rain, next 24 h', unit: 'mm', cmap: 'YlGnBu', d: 1, zero: true }],
+  [/et0_next_24h/, { label: 'ET₀, next 24 h', unit: 'mm', cmap: 'YlOrBr', d: 2, zero: true }],
   [/precipitation_probability|precip_prob/, { label: 'Rain probability', unit: '%', cmap: 'YlGnBu', d: 0, lo: 0, hi: 100 }],
   [/precip_cum/, { label: 'Rain accumulated', unit: 'mm', cmap: 'YlGnBu', d: 1, zero: true }],
   [/water_balance_cum/, { label: 'Rain − ET₀ accumulated', unit: 'mm', cmap: 'BrBG', d: 1, diverging: true }],
@@ -216,6 +219,21 @@ async function loadGrid() {
       bal[k] = (t ? bal[prev] : 0) + (rain[k] || 0) - (et0[k] || 0);
     }
     fields.precip_cum = cum; fields.water_balance_cum = bal;
+    // forward-looking windows from each hour: what the next day / three days hold
+    const ahead = (src, hours) => {
+      const out = new Float32Array(size).fill(NaN);
+      for (let t = 0; t + hours < nt; t++) for (let c = 0; c < cell; c++) {
+        let sum = 0;
+        for (let h = 1; h <= hours; h++) sum += src[(t + h) * cell + c] || 0;
+        out[t * cell + c] = sum;
+      }
+      return out;
+    };
+    fields.rain_next_24h = ahead(rain, 24);
+    fields.et0_next_24h = ahead(et0, 24);
+    const r72 = ahead(rain, 72), e72 = ahead(et0, 72), need = new Float32Array(size);
+    for (let k = 0; k < size; k++) need[k] = e72[k] - r72[k];
+    fields.need_72h = need;
   }
   const stats = {};
   for (const [name, f] of Object.entries(fields)) {
@@ -231,4 +249,45 @@ async function loadGrid() {
   }
   App.grid = { nx, ny, nt, cell, lats: g.lats, lons: g.lons, times: g.times, fields, stats, names: Object.keys(fields) };
   App.dem = { ...meta.dem, z: new Int16Array(demBuf) };
+  try { App.parks = await getJSON('data/parks.json'); } catch (err) { App.parks = null; console.warn('No parks layer:', err.message); }
 }
+
+/* ---------------- icons (our own static SVG, safe to inject) ---------------- */
+const ICONS = {
+  tree: '<path d="M12 2.5a5.5 5.5 0 0 0-5.3 7A4.5 4.5 0 0 0 8 18h3v3.5h2V18h3a4.5 4.5 0 0 0 1.3-8.5A5.5 5.5 0 0 0 12 2.5z" fill="currentColor"/>',
+  flower: '<g fill="currentColor"><circle cx="12" cy="6.5" r="3.2"/><circle cx="6.8" cy="10.3" r="3.2"/><circle cx="17.2" cy="10.3" r="3.2"/><circle cx="8.8" cy="16.3" r="3.2"/><circle cx="15.2" cy="16.3" r="3.2"/></g><circle cx="12" cy="11.8" r="2.3" fill="#10161d"/>',
+  sprout: '<path d="M12 21v-9M6 21h12" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/><path d="M12 13C12 8.5 8.8 6 4 6c0 4.5 3.2 7 8 7zM12 11c0-4.6 3.2-7.5 8-7.5 0 4.6-3.2 7.5-8 7.5z" fill="currentColor"/>',
+  flag: '<path d="M6 21.5V2.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M7 3h11l-3 4 3 4H7z" fill="currentColor"/>',
+  shield: '<path d="M12 2l8 3v6.5c0 5-3.4 8.7-8 10.5-4.6-1.8-8-5.5-8-10.5V5z" fill="currentColor"/><path d="M12 7.5c-2.6 1.2-3.8 3.4-3 6.5 3-.4 4.6-2.6 3-6.5z" fill="#10161d"/>',
+  drop: '<path d="M12 2.5C8.2 7.6 6 11 6 14.3a6 6 0 0 0 12 0C18 11 15.8 7.6 12 2.5z" fill="currentColor"/>',
+  station: '<path d="M10 3.5a2 2 0 0 1 4 0v9.6a4.2 4.2 0 1 1-4 0z" fill="currentColor"/><circle cx="12" cy="16.8" r="1.8" fill="#10161d"/>',
+  pin: '<circle cx="12" cy="12" r="7.5" fill="none" stroke="currentColor" stroke-width="2" stroke-dasharray="3 2.4"/><circle cx="12" cy="12" r="1.8" fill="currentColor"/>',
+  isoline: '<path d="M2 14c4-6 7 2 10-3s6-4 10-1" fill="none" stroke="currentColor" stroke-width="2"/><path d="M2 20c4-5 8 1 11-2.5S19 15 22 16" fill="none" stroke="currentColor" stroke-width="1.4" opacity=".6"/>',
+  wind: '<path d="M4 19L18 5" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/><path d="M10.5 5H18v7.5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>',
+  grid: '<g fill="currentColor"><circle cx="5" cy="5" r="1.8"/><circle cx="12" cy="5" r="1.8"/><circle cx="19" cy="5" r="1.8"/><circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/><circle cx="5" cy="19" r="1.8"/><circle cx="12" cy="19" r="1.8"/><circle cx="19" cy="19" r="1.8"/></g>',
+  values: '<text x="12" y="16.5" text-anchor="middle" font-size="11.5" font-family="ui-monospace,Menlo,monospace" font-weight="700" fill="currentColor">1.2</text>',
+  streets: '<path d="M4 21L9.5 3M20 21L14.5 3M12 5v3M12 11v3M12 17v3" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/>',
+  relief: '<path d="M2 20l6.5-10 4 5 3-4L22 20z" fill="currentColor"/>',
+  sun: '<circle cx="12" cy="12" r="4.2" fill="currentColor"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1L7 17M17 7l2.1-2.1" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>',
+  shadow: '<path d="M2 20l6.5-10 4 5 3-4L22 20z" fill="currentColor" opacity=".4"/><path d="M8.5 10l4 5 3-4 2.5 3.5L8 20z" fill="currentColor"/>',
+  sea: '<path d="M2 9c3-2.4 5.5 2.4 8.5 0s5.5-2.4 8.5 0c1.5 1.2 3 .6 3 .6M2 15c3-2.4 5.5 2.4 8.5 0s5.5-2.4 8.5 0c1.5 1.2 3 .6 3 .6" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/>',
+  layers: '<path d="M12 3l9 5-9 5-9-5z" fill="currentColor"/><path d="M3 12.5l9 5 9-5M3 16.5l9 5 9-5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>',
+};
+const iconSVG = (name, size = 16) => `<svg viewBox="0 0 24 24" width="${size}" height="${size}" aria-hidden="true" focusable="false">${ICONS[name] || ''}</svg>`;
+const iconEl = (name, size = 16, colour) => {
+  const span = document.createElement('span');
+  span.className = 'ico';
+  if (colour) span.style.color = colour;
+  span.innerHTML = iconSVG(name, size);
+  return span;
+};
+/* Green-space categories: colour, icon, outline dash, drawing order (bottom first). */
+const PARK_STYLE = {
+  protected: { colour: '#b794f4', icon: 'shield', dash: '7 5', order: 0, fill: 0.05 },
+  park: { colour: '#68d391', icon: 'tree', order: 1, fill: 0.16 },
+  golf: { colour: '#63b3ed', icon: 'flag', order: 2, fill: 0.14 },
+  garden: { colour: '#f687b3', icon: 'flower', order: 3, fill: 0.16 },
+  allotments: { colour: '#f6ad55', icon: 'sprout', order: 4, fill: 0.22 },
+};
+const COMPASS = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
+const compass = (deg) => COMPASS[Math.round((((deg % 360) + 360) % 360) / 45) % 8];

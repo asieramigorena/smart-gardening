@@ -11,6 +11,8 @@ Writes into data/dashboard/app/:
   dem.bin                int16 terrain heights, Web Mercator raster
   series_bilbao.json     hourly record: observed (ERA5 model) + forecasts as issued
   series_darrington.json hourly record: USCRN station + model soil moisture + forecasts
+  parks.json             OpenStreetMap parks, gardens, allotments, golf courses and protected
+                         areas, with terrain statistics and weights onto the forecast grid
 """
 from __future__ import annotations
 
@@ -22,7 +24,8 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from connectors import open_meteo, terrain
+from connectors import osm, terrain
+from connectors.open_meteo import OpenMeteoDataset
 
 DATA = Path(__file__).resolve().parents[2] / "data"
 RAW = DATA / "raw" / "open_meteo"
@@ -75,7 +78,7 @@ def forecast_grid(stamp: str) -> tuple[np.ndarray, dict]:
     for i in range(0, len(flat_lat), chunk):
         part = cache / f"{i:04d}.parquet"
         if not part.exists():
-            frame = open_meteo.forecast_grid(flat_lat[i:i + chunk], flat_lon[i:i + chunk], days=7, past_days=2,
+            frame = OpenMeteoDataset.forecast_grid(flat_lat[i:i + chunk], flat_lon[i:i + chunk], days=7, past_days=2,
                                              variables=GRID_VARIABLES, chunk=chunk)
             frame.to_parquet(part)
             print(f"  grid points {i}-{i + len(frame) // frame['time'].nunique() - 1} fetched", flush=True)
@@ -93,6 +96,74 @@ def forecast_grid(stamp: str) -> tuple[np.ndarray, dict]:
     return cube, meta
 
 
+def parks_geojson(dem_meta: dict, heights: np.ndarray) -> dict:
+    """Green areas with per-area terrain statistics and bilinear weights onto the
+    forecast grid, so the app can average any forecast field over each area."""
+    import shapely
+
+    areas = osm.green_areas(SOUTH, WEST, NORTH, EAST, cache_dir=DATA / "raw" / "osm")
+    H, W = heights.shape
+    z = heights.astype("float32")
+    px = dem_meta["metres_per_pixel"]
+    dzdy, dzdx = np.gradient(z, px)          # rows run north to south
+    dzdy = -dzdy                              # towards north
+    slope = np.degrees(np.arctan(np.hypot(dzdx, dzdy)))
+    aspect = (np.degrees(np.arctan2(-dzdx, -dzdy)) + 360) % 360
+    m_n, m_s = (np.log(np.tan(np.pi / 4 + np.radians(v) / 2)) for v in (dem_meta["north"], dem_meta["south"]))
+    lon_c = dem_meta["west"] + (np.arange(W) + 0.5) / W * (dem_meta["east"] - dem_meta["west"])
+    lat_c = np.degrees(np.arctan(np.sinh(m_n - (np.arange(H) + 0.5) / H * (m_n - m_s))))
+    lat0 = (NORTH + SOUTH) / 2
+    to_metres = lambda xy: np.column_stack([xy[:, 0] * 111320 * np.cos(np.radians(lat0)), xy[:, 1] * 110540])  # noqa: E731
+
+    features = []
+    for a in areas:
+        g = a["geometry"]
+        area_ha = shapely.transform(g, to_metres).area / 1e4
+        if area_ha < 0.01:
+            continue
+        x0, y0, x1, y1 = g.bounds
+        cols = np.nonzero((lon_c >= x0) & (lon_c <= x1))[0]
+        rows = np.nonzero((lat_c >= y0) & (lat_c <= y1))[0]
+        if len(cols) and len(rows):
+            gx, gy = np.meshgrid(cols, rows)
+            inside = shapely.contains_xy(g, lon_c[gx], lat_c[gy])
+            iy, ix = gy[inside], gx[inside]
+        else:
+            iy = ix = np.array([], dtype=int)
+        if not len(ix):  # smaller than one terrain pixel: use the pixel under its centre
+            c = g.representative_point()
+            ix = np.array([int(np.clip(np.searchsorted(lon_c, c.x), 0, W - 1))])
+            iy = np.array([int(np.clip(H - 1 - np.searchsorted(lat_c[::-1], c.y), 0, H - 1))])
+        elev = z[iy, ix]
+        asp = np.radians(aspect[iy, ix])
+        mean_aspect = (np.degrees(np.arctan2(np.sin(asp).mean(), np.cos(asp).mean())) + 360) % 360
+        # bilinear weights of the covered pixels onto the forecast grid
+        fx = np.clip((lon_c[ix] - WEST) / (EAST - WEST) * (GRID_NX - 1), 0, GRID_NX - 1)
+        fy = np.clip((NORTH - lat_c[iy]) / (NORTH - SOUTH) * (GRID_NY - 1), 0, GRID_NY - 1)
+        i0, j0 = np.floor(fx).astype(int), np.floor(fy).astype(int)
+        i1, j1 = np.minimum(i0 + 1, GRID_NX - 1), np.minimum(j0 + 1, GRID_NY - 1)
+        wx, wy = fx - i0, fy - j0
+        weights: dict[int, float] = {}
+        for ii, jj, ww in ((i0, j0, (1 - wx) * (1 - wy)), (i1, j0, wx * (1 - wy)), (i0, j1, (1 - wx) * wy), (i1, j1, wx * wy)):
+            for cell, w in zip((jj * GRID_NX + ii).tolist(), ww.tolist()):
+                weights[cell] = weights.get(cell, 0.0) + w
+        top = sorted(weights.items(), key=lambda kv: -kv[1])[:48]
+        total = sum(w for _, w in top)
+        tol = 0.0003 if a["category"] == "protected" else 0.00002
+        simple = g.simplify(tol, preserve_topology=True)
+        label = g.representative_point()
+        geo = shapely.geometry.mapping(shapely.set_precision(simple, 1e-6))
+        features.append({"type": "Feature", "geometry": geo, "properties": {
+            "id": a["id"], "osm": a["osm"], "cat": a["category"], "name": a["name"],
+            "area_ha": round(area_ha, 3), "label": [round(label.x, 6), round(label.y, 6)],
+            "elev": [int(elev.min()), round(float(elev.mean()), 1), int(elev.max())],
+            "slope": round(float(slope[iy, ix].mean()), 1), "aspect": round(float(mean_aspect)),
+            "w": [[c, round(w / total, 4)] for c, w in top],
+        }})
+    labels = {k: v[0] for k, v in osm.CATEGORIES.items()}
+    return {"type": "FeatureCollection", "categories": labels, "features": features}
+
+
 def main() -> None:
     OUT.mkdir(parents=True, exist_ok=True)
     now = pd.Timestamp.now(tz="UTC").floor("h")
@@ -104,6 +175,11 @@ def main() -> None:
             heights, meta["dem"] = terrain.elevation_raster(WEST, SOUTH, EAST, NORTH, zoom=11)
             (OUT / "dem.bin").write_bytes(heights.tobytes())
             print(f"dem.bin: {heights.shape} int16, max {heights.max()} m")
+        if not (OUT / "parks.json").exists() or "--parks" in sys.argv:
+            heights = np.fromfile(OUT / "dem.bin", dtype="<i2").reshape(meta["dem"]["height"], meta["dem"]["width"])
+            parks = parks_geojson(meta["dem"], heights)
+            (OUT / "parks.json").write_text(json.dumps(parks, separators=(",", ":")))
+            print(f"parks.json: {len(parks['features']):,} areas, {(OUT / 'parks.json').stat().st_size / 1e6:.1f} MB")
         series_json(bilbao_series(now), OUT / "series_bilbao.json")
         series_json(darrington_series(), OUT / "series_darrington.json")
         meta_path.write_text(json.dumps(meta, separators=(",", ":")))

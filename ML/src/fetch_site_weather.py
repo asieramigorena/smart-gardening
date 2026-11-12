@@ -13,11 +13,11 @@ from pathlib import Path
 
 import pandas as pd
 
-from connectors import open_meteo
+from connectors.open_meteo import OpenMeteoDataset
 
 OUT_DIR = Path(__file__).resolve().parents[2] / "data" / "raw" / "open_meteo"
 START = "2024-01-01"
-OBSERVED = open_meteo.OBSERVED_VARIABLES + [
+OBSERVED = OpenMeteoDataset.OBSERVED_VARIABLES + [
     "vapour_pressure_deficit", "soil_moisture_0_to_7cm", "soil_moisture_7_to_28cm",
     "soil_moisture_28_to_100cm", "soil_temperature_0_to_7cm", "soil_temperature_28_to_100cm",
 ]
@@ -28,8 +28,8 @@ def main() -> None:
     end = pd.Timestamp.now(tz="UTC").date().isoformat()
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     jobs = {
-        "observed": lambda: open_meteo.observed(lat, lon, START, end, OBSERVED),
-        "issued": lambda: open_meteo.forecast_as_issued(lat, lon, START, end),
+        "observed": lambda: OpenMeteoDataset.observed(lat, lon, START, end, OBSERVED),
+        "issued": lambda: OpenMeteoDataset.forecast_as_issued(lat, lon, START, end),
     }
     for kind, fetch in jobs.items():
         path = OUT_DIR / f"{name}_{kind}.parquet"

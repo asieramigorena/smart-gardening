@@ -17,7 +17,8 @@ from pathlib import Path
 
 import pandas as pd
 
-from connectors import open_meteo, uscrn
+from connectors import uscrn
+from connectors.open_meteo import OpenMeteoDataset
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 FIRST_FORECAST_YEAR = 2026  # Open-Meteo's archive of past forecast runs starts here
@@ -28,12 +29,12 @@ def build(station: str, years: list[int], data_dir: Path) -> pd.DataFrame:
     lat, lon = station_df.attrs["latitude"], station_df.attrs["longitude"]
     start, end = station_df.index.min().date(), station_df.index.max().date()
 
-    observed = open_meteo.observed(lat, lon, start, end).add_prefix("om_")
+    observed = OpenMeteoDataset.observed(lat, lon, start, end).add_prefix("om_")
     table = station_df.join(observed, how="left")
 
     forecast_start = max(pd.Timestamp(start), pd.Timestamp(FIRST_FORECAST_YEAR, 1, 1)).date()
     if forecast_start <= end:
-        issued = open_meteo.forecast_as_issued(lat, lon, forecast_start, end).add_prefix("fc_")
+        issued = OpenMeteoDataset.forecast_as_issued(lat, lon, forecast_start, end).add_prefix("fc_")
         table = table.join(issued, how="left")
 
     table.attrs = station_df.attrs
