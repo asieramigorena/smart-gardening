@@ -34,7 +34,7 @@
       <h2>Layer</h2>
       <div class="seg" id="map-mode">
         <button data-mode="single" class="on">Single variable</button>
-        <button data-mode="rgb">RGB composite</button>
+        <button data-mode="rgb" title="Route three variables to the red, green and blue channels">RGB composite</button>
       </div>
 
       <div id="single-controls">
@@ -69,20 +69,27 @@
       <label>Data opacity <span class="row"><input type="range" id="map-opacity" min="0" max="1" step="0.05" value="0.85"><output id="map-opacity-out">0.85</output></span></label>
 
       <h2>Overlays</h2>
-      <label class="chk"><input type="checkbox" id="ov-contours" checked> Isolines of the variable</label>
-      <label class="chk"><input type="checkbox" id="ov-wind"> Wind arrows</label>
-      <label class="chk"><input type="checkbox" id="ov-points"> Model grid points</label>
-      <label>Streets and labels <span class="row"><input type="range" id="ov-osm" min="0" max="1" step="0.05" value="0.45"><output id="ov-osm-out">0.45</output></span></label>
+      <label class="chk" title="Lines of equal value of the colour layer, with value labels"><input type="checkbox" id="ov-contours" checked><span data-icon="isoline"></span> Isolines of the variable</label>
+      <label class="chk" title="Arrows point the way the wind blows; longer means stronger"><input type="checkbox" id="ov-wind"><span data-icon="wind"></span> Wind arrows</label>
+      <label class="chk" title="Where the forecast model actually computes values (about every 2 km)"><input type="checkbox" id="ov-points"><span data-icon="grid"></span> Model grid points</label>
+      <label class="chk" title="Print the colour layer's value at every grid point"><input type="checkbox" id="ov-values"><span data-icon="values"></span> Values at grid points</label>
+      <label title="Opacity of the OpenStreetMap streets and place names"><span class="row"><span data-icon="streets"></span>Streets and labels</span> <span class="row"><input type="range" id="ov-osm" min="0" max="1" step="0.05" value="0.45"><output id="ov-osm-out">0.45</output></span></label>
+
+      <h2>Green spaces</h2>
+      <div id="park-toggles" class="park-toggles"></div>
+      <label class="chk" title="Show the names of named green spaces (more appear as you zoom in)"><input type="checkbox" id="park-names" checked> Names</label>
+      <label class="chk" title="Tint the inside of each area, not just its outline"><input type="checkbox" id="park-fill" checked> Fill areas</label>
+      <p class="hint">Outlines come from OpenStreetMap. Hover for a summary; click an area for its terrain, forecast and 3-day water balance. Icons appear as you zoom in.</p>
 
       <h2>Terrain</h2>
-      <label class="chk"><input type="checkbox" id="tr-relief" checked> Shaded relief</label>
-      <label>Light
+      <label class="chk" title="Hill shading from a 55 m elevation model"><input type="checkbox" id="tr-relief" checked><span data-icon="relief"></span> Shaded relief</label>
+      <label><span class="row"><span data-icon="sun"></span>Light</span>
         <select id="tr-light">
           <option value="sun">Real sun position at this hour</option>
           <option value="nw">Fixed, from the north-west</option>
         </select>
       </label>
-      <label class="chk"><input type="checkbox" id="tr-shadows" checked> Cast shadows</label>
+      <label class="chk" title="Darken ground that a hill blocks from the sun at the selected hour"><input type="checkbox" id="tr-shadows" checked><span data-icon="shadow"></span> Cast shadows</label>
       <div class="readout" id="sun-readout"></div>
 
     </aside>

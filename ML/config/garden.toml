@@ -1,0 +1,70 @@
+# Garden description: one [zones.<key>] table per valve-controlled bed.
+#
+# Soil textures and plants refer to the catalogues in ML/src/garden/catalogue.py:
+#   soils:  sand loamy_sand sandy_loam loam silt_loam silty_clay_loam silty_clay clay raised_bed_mix
+#   plants: tomato lettuce pepper green_bean zucchini carrot potato strawberry turfgrass_cool
+# Annual crops need planting.sown_on (YYYY-MM-DD); perennials need planting.season_start (MM-DD).
+# soil.depth_m (optional) is the depth roots can reach, e.g. a raised bed's fill depth.
+# A [zones.<key>.data] table makes the zone available to ML/src/build_training_set.py.
+
+schema_version = 1
+
+[defaults]
+timezone = "Europe/Madrid"
+
+# ----------------------------------------------------------------------------
+# Training reference: the USCRN station near Darrington, WA. Unirrigated
+# grassland, so its moisture record is exactly the "no irrigation" trajectory
+# the forest has to learn.
+[zones.darrington]
+name = "USCRN Darrington 21 NNE"
+role = "training"
+area_m2 = 1.0
+timezone = "America/Los_Angeles"
+location = { lat = 48.54, lon = -121.45 }
+# Texture is an assumption (glacial outwash; the probes read as low as 0.03).
+# calibrate_soil below replaces θ_FC and θ_WP with values from the record.
+soil = { texture = "loamy_sand" }
+planting = { plant = "turfgrass_cool", season_start = "03-01" }
+probes = [
+    { depth_cm = 5, channel = "soil_moisture_5cm", temperature_channel = "soil_temp_5cm" },
+    { depth_cm = 10, channel = "soil_moisture_10cm", temperature_channel = "soil_temp_10cm" },
+    { depth_cm = 20, channel = "soil_moisture_20cm", temperature_channel = "soil_temp_20cm" },
+    { depth_cm = 50, channel = "soil_moisture_50cm", temperature_channel = "soil_temp_50cm" },
+    { depth_cm = 100, channel = "soil_moisture_100cm", temperature_channel = "soil_temp_100cm" },
+]
+notes = "Station measures rain and radiation; ET0 comes from the Open-Meteo reanalysis."
+
+[zones.darrington.data]
+table = "data/processed/WA_Darrington_21_NNE_hourly.parquet"
+calibrate_soil = true
+weather = { rain_mm = "precip_mm", et0_mm = "om_et0_fao_evapotranspiration", radiation_w_m2 = "solar_rad_wm2" }
+
+# ----------------------------------------------------------------------------
+# Deployment beds in Bilbao. Probes and valves are not installed yet: depths
+# and flows below are the planned hardware; edit when it is in place.
+[zones.bilbao_tomatoes]
+name = "Bilbao, tomato bed"
+role = "deployment"
+area_m2 = 2.4
+location = { lat = 43.263, lon = -2.935 }
+soil = { texture = "raised_bed_mix", depth_m = 0.4 }   # bed depth caps the root zone
+planting = { plant = "tomato", sown_on = "2026-04-20" }
+irrigation = { method = "drip", flow_l_h = 24.0 }   # 12 emitters × 2 L/h
+probes = [
+    { depth_cm = 10, channel = "theta_10cm" },
+    { depth_cm = 30, channel = "theta_30cm" },
+]
+
+[zones.bilbao_lettuce]
+name = "Bilbao, lettuce bed"
+role = "deployment"
+area_m2 = 1.2
+location = { lat = 43.263, lon = -2.935 }
+soil = { texture = "loam" }
+planting = { plant = "lettuce", sown_on = "2026-09-15" }
+irrigation = { method = "micro_sprinkler", flow_l_h = 30.0 }
+probes = [
+    { depth_cm = 10, channel = "theta_10cm" },
+    { depth_cm = 25, channel = "theta_25cm" },
+]
