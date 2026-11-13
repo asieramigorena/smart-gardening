@@ -21,3 +21,15 @@ Create your local environment file in the repository root and fill in the secret
 `.env` holds secrets, so it is git-ignored and never committed. `.env.example` is its committed
 template: it lists every variable the code needs, with public values filled in and secrets left
 empty. When you add a new variable, add it to `.env.example` too.
+
+## CI
+
+Every pull request to `dev` or `main` runs these checks; all must pass before merging:
+
+- `Security / gitleaks`: no secrets in the new commits (also catches anything that skipped the pre-commit hook)
+- `Python / lint`: ruff on `node/` and `ML/` (real errors only, no style)
+- `Infra / terraform`: fmt, validate and tflint on `infra/`
+
+Dependabot opens a weekly PR to update the GitHub Actions versions; review and merge it like any other PR.
+
+Details, design decisions and how to run the checks locally: [docs/ci.md](docs/ci.md).

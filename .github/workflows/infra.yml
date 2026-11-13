@@ -1,0 +1,89 @@
+name: Infra
+
+# No `paths` filter on the triggers (see python.yml): the `changes` job decides instead.
+# CI only checks the code: no backend, no AWS credentials, no plan/apply.
+on:
+  pull_request:
+    branches: [dev, main]
+  push:
+    branches: [dev, main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  changes:
+    name: changes
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read # list the files changed in the PR
+    outputs:
+      infra: ${{ steps.filter.outputs.infra }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Detect changes
+        id: filter
+        uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+        with:
+          # On push, compare with the previous commit of the same branch (default would be main).
+          # Ignored on pull_request, which uses the PR's changed files.
+          base: ${{ github.ref }}
+          filters: |
+            infra:
+              - "infra/**"
+              - ".github/workflows/infra.yml"
+
+  terraform:
+    name: terraform
+    needs: changes
+    # Skip only when the filter positively says nothing changed. If `changes` fails, run anyway:
+    # a skipped job counts as passed for a required check, so failing open would let PRs merge unchecked.
+    if: ${{ !cancelled() && needs.changes.outputs.infra != 'false' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: infra
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          terraform_version: "1.17.2"
+          terraform_wrapper: false
+
+      - name: Format check
+        run: terraform fmt -check -recursive -diff
+
+      - name: Init (no backend)
+        run: terraform init -backend=false -input=false
+
+      - name: Validate
+        run: terraform validate
+
+      - name: Set up TFLint
+        uses: terraform-linters/setup-tflint@6ffdbaa3be476b3431f7275c26966ef32ff60337 # v6.3.2
+        with:
+          tflint_version: "v0.66.0"
+
+      - name: Init TFLint
+        run: tflint --init
+        env:
+          GITHUB_TOKEN: ${{ github.token }} # avoids API rate limits when downloading plugins
+
+      - name: TFLint
+        run: tflint --recursive
