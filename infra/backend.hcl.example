@@ -1,0 +1,4 @@
+# Partial S3 backend config shared by infra/bootstrap and infra/main.
+# Copy to backend.hcl (git-ignored) and replace <account_id>:
+#   terraform -chdir=bootstrap output -raw backend_hcl > backend.hcl
+bucket = "smart-gardening-tfstate-<account_id>"

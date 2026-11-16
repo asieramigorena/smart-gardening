@@ -26,3 +26,5 @@ override.tf
 override.tf.json
 *_override.tf
 *_override.tf.json
+# Partial backend config (contains the account ID); see infra/backend.hcl.example
+backend.hcl
