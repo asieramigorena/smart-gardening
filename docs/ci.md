@@ -10,7 +10,7 @@ than the automatic `GITHUB_TOKEN`, which is read-only.
 |---|---|---|---|
 | `.github/workflows/security.yml` | `Security / gitleaks` | Always | Scans the new commits for secrets (API keys, tokens, passwords) with gitleaks. |
 | `.github/workflows/python.yml` | `Python / lint` | `node/` or `ML/` changed | `ruff check` with real-error rules only (syntax errors, undefined names, unused imports). No style rules. |
-| `.github/workflows/infra.yml` | `Infra / terraform` | `infra/` changed | `terraform fmt -check`, `terraform init -backend=false`, `terraform validate` and `tflint`. |
+| `.github/workflows/infra.yml` | `Infra / terraform` | `infra/` changed | `terraform fmt -check`, then `terraform init -backend=false`, `terraform validate` and `tflint` in each root module (`infra/bootstrap`, `infra/main`). |
 
 `.github/dependabot.yml` opens a weekly PR against `dev` to update the actions used by the workflows.
 
@@ -52,11 +52,16 @@ break CI without a code change:
 |---|---|---|
 | ruff | 0.17.5 | `python.yml` |
 | Python | 3.11 (Raspberry Pi OS Bookworm) | `python.yml` |
-| Terraform | 1.17.2 | `infra.yml` |
-| TFLint | v0.66.0 | `infra.yml` |
+| Terraform | 1.17.2 | `infra/mise.toml` |
+| TFLint | 0.66.0 (+ AWS ruleset 0.50.0) | `infra/mise.toml` (ruleset: `infra/.tflint.hcl`) |
+| mise | 2026.11.0 | `infra.yml` |
 | gitleaks | 8.30.0 (same as the pre-commit hook) | `security.yml` |
 
 Dependabot updates the action SHAs. The tool versions are updated by hand.
+
+Terraform and TFLint have a single source of truth, `infra/mise.toml`: the Infra workflow installs
+them with [jdx/mise-action](https://github.com/jdx/mise-action), and developers get the same
+versions locally with `mise install`. To upgrade, change `infra/mise.toml` only.
 
 **Concurrency.** A new push to a PR cancels the previous run of the same workflow. Runs on
 `dev` and `main` are never cancelled, so every commit there gets a result.
@@ -70,12 +75,15 @@ not rescan the full history on every run. To scan the full history, run it local
 # Python lint (same command as CI)
 pipx run --spec ruff==0.17.5 ruff check node ML --select E4,E7,E9,F
 
-# Terraform
+# Terraform (versions from infra/mise.toml; run `mise install` once)
 cd infra
 terraform fmt -check -recursive -diff
-terraform init -backend=false
-terraform validate
-tflint --init && tflint --recursive
+for module in bootstrap main; do
+  terraform -chdir="$module" init -backend=false
+  terraform -chdir="$module" validate
+done
+tflint --init
+for module in bootstrap main; do tflint --chdir="$module" --config="$PWD/.tflint.hcl"; done
 
 # Secrets: staged changes are checked by the pre-commit hook on every commit.
 # Full history:
@@ -91,6 +99,7 @@ not fully reproducible with act.
 - Adding a Python rule: add it to `--select` only after the existing code passes it, or fix the
   code in the same PR.
 - Adding a path to a filter: edit the `filters` block of the `changes` job, not `on:`.
+- Adding a Terraform root module under `infra/`: add it to `MODULES` in `infra.yml`.
 - Adding a new workflow: keep `permissions: contents: read`, pin actions to a SHA, and use the
   `changes` job pattern if it should only run for some paths. Validate with
   [actionlint](https://github.com/rhysd/actionlint) and [zizmor](https://github.com/zizmorcore/zizmor).

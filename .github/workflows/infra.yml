@@ -54,31 +54,36 @@ jobs:
     defaults:
       run:
         working-directory: infra
+    env:
+      # Root modules, each checked on its own. Add new ones here.
+      MODULES: bootstrap main
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
-      - name: Set up Terraform
-        uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+      # Installs the Terraform and TFLint versions pinned in infra/mise.toml (single source
+      # of truth, shared with local development).
+      - name: Set up tools (mise)
+        uses: jdx/mise-action@236a21c3b91f5db6d4e174b348674a0f0caac06d # v5.2.9
         with:
-          terraform_version: "1.17.2"
-          terraform_wrapper: false
+          version: "2026.11.0"
+          working_directory: infra
+          # Do not export [env] (AWS_PROFILE) to later steps: CI has no AWS access.
+          env: false
 
       - name: Format check
         run: terraform fmt -check -recursive -diff
 
-      - name: Init (no backend)
-        run: terraform init -backend=false -input=false
-
-      - name: Validate
-        run: terraform validate
-
-      - name: Set up TFLint
-        uses: terraform-linters/setup-tflint@6ffdbaa3be476b3431f7275c26966ef32ff60337 # v6.3.2
-        with:
-          tflint_version: "v0.66.0"
+      - name: Init (no backend) and validate
+        run: |
+          for module in $MODULES; do
+            echo "::group::$module"
+            terraform -chdir="$module" init -backend=false -input=false
+            terraform -chdir="$module" validate
+            echo "::endgroup::"
+          done
 
       - name: Init TFLint
         run: tflint --init
@@ -86,4 +91,9 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }} # avoids API rate limits when downloading plugins
 
       - name: TFLint
-        run: tflint --recursive
+        run: |
+          for module in $MODULES; do
+            echo "::group::$module"
+            tflint --chdir="$module" --config="$PWD/.tflint.hcl"
+            echo "::endgroup::"
+          done
