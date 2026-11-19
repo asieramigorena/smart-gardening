@@ -1,0 +1,73 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/asieramigorena/smart-gardening/docs/contracts/readings.schema.json",
+  "title": "Sensor reading",
+  "description": "Published by a device on smart-gardening/{device_id}/readings. A sensor that fails to read is sent as null.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "device_id", "zone", "ts", "soil_moisture_raw"],
+  "properties": {
+    "schema_version": {
+      "description": "Contract version. Bumped on any breaking change.",
+      "const": 1
+    },
+    "device_id": {
+      "description": "Device (IoT thing) name. The device_id in the topic takes precedence over this field.",
+      "$ref": "#/$defs/device_id"
+    },
+    "zone": {
+      "$ref": "#/$defs/zone"
+    },
+    "ts": {
+      "description": "When the reading was taken, UTC.",
+      "$ref": "#/$defs/utc_timestamp"
+    },
+    "soil_moisture_raw": {
+      "description": "Uncalibrated ADC value of the soil moisture sensor (12 bits). Key is mandatory; null if the sensor failed.",
+      "type": ["integer", "null"],
+      "minimum": 0,
+      "maximum": 4095
+    },
+    "soil_moisture": {
+      "description": "Calibrated soil moisture in %. Only sent when the sensor is calibrated.",
+      "type": ["number", "null"],
+      "minimum": 0,
+      "maximum": 100
+    },
+    "air_temp": {
+      "description": "Air temperature in degrees Celsius.",
+      "type": ["number", "null"],
+      "minimum": -40,
+      "maximum": 80
+    },
+    "air_humidity": {
+      "description": "Relative air humidity in %.",
+      "type": ["number", "null"],
+      "minimum": 0,
+      "maximum": 100
+    },
+    "light": {
+      "description": "Light level in % of the sensor range.",
+      "type": ["number", "null"],
+      "minimum": 0,
+      "maximum": 100
+    }
+  },
+  "$defs": {
+    "device_id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{1,64}$"
+    },
+    "zone": {
+      "description": "Irrigation zone key (one valve per zone).",
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9_-]{0,31}$"
+    },
+    "utc_timestamp": {
+      "description": "ISO 8601 / RFC 3339 timestamp in UTC, with a trailing Z.",
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]{1,6})?Z$"
+    }
+  }
+}
