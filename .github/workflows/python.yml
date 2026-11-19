@@ -1,7 +1,7 @@
 name: Python
 
 # No `paths` filter on the triggers: a workflow skipped by `paths` never reports a status,
-# which would block PRs if `Python / lint` or `Python / contracts` is a required check. The
+# which would block PRs if `Python / lint`, `Python / contracts` or `Python / ingest` is a required check. The
 # `changes` job decides instead, and a skipped job counts as passed.
 on:
   pull_request:
@@ -27,6 +27,7 @@ jobs:
     outputs:
       python: ${{ steps.filter.outputs.python }}
       contracts: ${{ steps.filter.outputs.contracts }}
+      ingest: ${{ steps.filter.outputs.ingest }}
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -44,9 +45,17 @@ jobs:
             python:
               - "node/**"
               - "ML/**"
+              - "DB/**"
+              - "tools/**"
               - "docs/contracts/**"
               - ".github/workflows/python.yml"
             contracts:
+              - "docs/contracts/**"
+              - ".github/workflows/python.yml"
+            # The ingestion service and the simulator validate against the contract schemas.
+            ingest:
+              - "DB/**"
+              - "tools/**"
               - "docs/contracts/**"
               - ".github/workflows/python.yml"
 
@@ -73,7 +82,7 @@ jobs:
 
       # Real errors only (syntax errors, undefined names, unused imports...), no style rules.
       - name: Lint
-        run: ruff check node ML docs/contracts --select E4,E7,E9,F --output-format=github
+        run: ruff check node ML DB tools docs/contracts --select E4,E7,E9,F --output-format=github
 
   contracts:
     name: contracts
@@ -99,3 +108,31 @@ jobs:
       # Schemas are valid draft 2020-12, valid examples pass and invalid ones fail.
       - name: Test message contract
         run: python -m unittest discover -s docs/contracts -p "test_*.py" -v
+
+  ingest:
+    name: ingest
+    needs: changes
+    if: needs.changes.outputs.ingest == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.11"
+
+      # Pinned in DB/ingest/requirements.txt (also covers the simulator test).
+      - name: Install dependencies
+        run: pip install -r DB/ingest/requirements.txt
+
+      # SQS and PostgreSQL are mocked: no AWS access and no database needed.
+      - name: Test ingestion service
+        run: python -m unittest discover -s DB/ingest/tests -t DB/ingest -v
+
+      - name: Test simulator
+        run: python -m unittest discover -s tools/simulator -v
