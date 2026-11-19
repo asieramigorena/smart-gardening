@@ -1,0 +1,173 @@
+# Smart gardening server stack. Runs on the EC2 instance in /opt/smart-gardening/repo/infra/server
+# and is started by scripts/deploy.sh:
+#
+#   docker compose --env-file /opt/smart-gardening/.env up -d --build
+#
+# /opt/smart-gardening/.env is written by scripts/fetch-secrets.sh from SSM and never committed.
+# Nothing here is reachable from the Internet: the instance has no inbound rules, and ports are
+# published only on the server's loopback (reach them with an SSM tunnel, see README.md).
+#
+# Memory: the instance is a t3.small (2 GB). Limits below leave ~0.9 GB for the OS, Docker and
+# the services still to come. To grow, see "More memory" in README.md.
+
+name: smart-gardening
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  postgres:
+    image: postgres:17.12-trixie
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: smart_gardening
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?run scripts/fetch-secrets.sh}
+    # Small-instance tuning; defaults otherwise.
+    command: ["postgres", "-c", "shared_buffers=128MB", "-c", "max_connections=50"]
+    ports:
+      # Loopback only. Other containers use postgres:5432 on the internal network.
+      - "127.0.0.1:${POSTGRES_HOST_PORT:-5432}:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks: [backend]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d smart_gardening"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+    logging: *logging
+
+  # Applies DB/migrations with dbmate, then exits. Runs on every `up`; already applied
+  # migrations are skipped.
+  migrate:
+    image: ghcr.io/amacneil/dbmate:2.38.1
+    command: ["--wait", "--no-dump-schema", "up"]
+    environment:
+      DATABASE_URL: postgres://postgres:${POSTGRES_PASSWORD:?}@postgres:5432/smart_gardening?sslmode=disable
+      DBMATE_MIGRATIONS_DIR: /db/migrations
+    volumes:
+      - ../../DB/migrations:/db/migrations:ro
+    networks: [backend]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+    deploy:
+      resources:
+        limits:
+          memory: 64m
+    logging: *logging
+
+  # Sets the passwords of the app and grafana roles (created by the migrations) from SSM, so
+  # they stay in sync after a rotation. Exits when done.
+  db-roles:
+    image: postgres:17.12-trixie
+    entrypoint: ["psql"]
+    command:
+      - --no-psqlrc
+      - --quiet
+      - --file=/db/set-role-passwords.sql
+      - --set=app_password=${DB_APP_PASSWORD:?run scripts/fetch-secrets.sh}
+      - --set=grafana_password=${DB_GRAFANA_PASSWORD:?run scripts/fetch-secrets.sh}
+    environment:
+      PGHOST: postgres
+      PGUSER: postgres
+      PGDATABASE: smart_gardening
+      PGPASSWORD: ${POSTGRES_PASSWORD:?}
+    volumes:
+      - ../../DB/set-role-passwords.sql:/db/set-role-passwords.sql:ro
+    networks: [backend]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    restart: "no"
+    deploy:
+      resources:
+        limits:
+          memory: 64m
+    logging: *logging
+
+  # SQS -> PostgreSQL. AWS credentials come from the EC2 instance role (IMDSv2, hop limit 2).
+  ingest:
+    build:
+      context: ../..
+      dockerfile: DB/ingest/Dockerfile
+    image: smart-gardening/ingest:local
+    restart: unless-stopped
+    environment:
+      AWS_REGION: ${AWS_REGION:?run scripts/fetch-secrets.sh}
+      INGEST_QUEUE_URL: ${INGEST_QUEUE_URL:?run scripts/fetch-secrets.sh}
+      INGEST_DLQ_URL: ${INGEST_DLQ_URL:?run scripts/fetch-secrets.sh}
+      DATABASE_URL: postgresql://app:${DB_APP_PASSWORD:?}@postgres:5432/smart_gardening
+      LOG_LEVEL: ${INGEST_LOG_LEVEL:-INFO}
+    networks: [backend]
+    depends_on:
+      db-roles:
+        condition: service_completed_successfully
+    # Let the current long poll (20 s) and message finish on `docker compose stop`.
+    stop_grace_period: 30s
+    read_only: true
+    tmpfs: [/tmp]
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: [ALL]
+    deploy:
+      resources:
+        limits:
+          memory: 128m
+    logging: *logging
+
+  # --- Decision service (Diego) -------------------------------------------------------------
+  # Reads readings/forecasts, writes decisions and publishes commands with boto3 iot-data
+  # (instance role, iot:Publish on smart-gardening/*/commands). See DB/README.md.
+  #
+  # decision:
+  #   build: { context: ../.., dockerfile: ML/<path>/Dockerfile }
+  #   restart: unless-stopped
+  #   environment:
+  #     AWS_REGION: ${AWS_REGION:?}
+  #     IOT_ENDPOINT: ${IOT_ENDPOINT:?}
+  #     DATABASE_URL: postgresql://app:${DB_APP_PASSWORD:?}@postgres:5432/smart_gardening
+  #   networks: [backend]
+  #   depends_on:
+  #     db-roles: { condition: service_completed_successfully }
+  #   deploy: { resources: { limits: { memory: 256m } } }
+  #   logging: *logging
+
+  # --- Grafana (Sara) -----------------------------------------------------------------------
+  # Datasource: host postgres:5432, database smart_gardening, user grafana (read-only),
+  # password ${DB_GRAFANA_PASSWORD}. Admin password from SSM /smart-gardening/grafana/admin_password.
+  # Port on loopback ONLY: open it from a laptop with an SSM tunnel to 3000.
+  #
+  # grafana:
+  #   image: grafana/grafana-oss:<pinned version>
+  #   restart: unless-stopped
+  #   environment:
+  #     GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?}
+  #     GF_DATABASE_TYPE: sqlite3            # Grafana's own settings stay in its volume
+  #     DB_GRAFANA_PASSWORD: ${DB_GRAFANA_PASSWORD:?}   # for the provisioned datasource
+  #   ports:
+  #     - "127.0.0.1:3000:3000"
+  #   volumes:
+  #     - grafana-data:/var/lib/grafana
+  #   networks: [backend]
+  #   depends_on:
+  #     db-roles: { condition: service_completed_successfully }
+  #   deploy: { resources: { limits: { memory: 256m } } }
+  #   logging: *logging
+
+volumes:
+  postgres-data:
+  # grafana-data:
+
+networks:
+  backend:
+    name: smart-gardening-backend

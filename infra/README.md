@@ -18,6 +18,7 @@ infra/
   backend.hcl.example   # template for backend.hcl (git-ignored, contains the account ID)
   bootstrap/            # S3 bucket for the Terraform state
   main/                 # everything else: server, IAM, secrets, backups bucket, IoT Core, SQS
+  server/               # what runs ON the server: docker compose stack and deploy/backup scripts
 ```
 
 What `main` creates:
@@ -82,13 +83,13 @@ EOF
 
 terraform init
 terraform plan -out=tfplan
-terraform apply tfplan
+terraform apply tfplan && rm tfplan
 
 # Write the partial backend config used by both modules.
 terraform output -raw backend_hcl > ../backend.hcl
 
 # Move the state into the bucket (key bootstrap/terraform.tfstate). Answer "yes" to copy it.
-rm backend_override.tf tfplan
+rm backend_override.tf
 terraform init -migrate-state -backend-config=../backend.hcl
 
 # Check: no changes, and the state is in S3. Then delete the local copies.
@@ -113,9 +114,12 @@ Your IAM user needs, besides EC2/S3/IAM/SSM on the project's resources, IoT Core
 cd infra/main
 terraform init -backend-config=../backend.hcl
 terraform plan -out=tfplan
-terraform apply tfplan
+terraform apply tfplan && rm tfplan
 terraform output
 ```
+
+A saved plan (`tfplan`) contains every value in plain text, secrets included. It is git-ignored,
+but delete it as soon as it has been applied (or discarded).
 
 The outputs include ready-to-copy commands (`ssm_shell_command`, `ssm_postgres_tunnel_command`,
 `db_password_command`, `iot_device_credentials_commands`), the queue URLs, the topic rule name
@@ -131,6 +135,9 @@ The first-boot log is in `/var/log/cloud-init-output.log` on the server.
 ## For the team: using the server
 
 You do not need Terraform for any of this, only the AWS CLI v2 and the Session Manager plugin.
+Deploying and operating the services on the server is described in
+[`server/README.md`](server/README.md); the database schema and how to use it, in
+[`DB/README.md`](../DB/README.md).
 
 ### 1. Set up your AWS CLI profile
 
@@ -170,13 +177,12 @@ Below, `<instance_id>` is that value (it is also the `instance_id` Terraform out
 aws ssm start-session --target <instance_id>
 ```
 
-You log in as `ssm-user`, which has `sudo`. Docker and the compose plugin are installed; put the
-compose project in `/opt/smart-gardening`:
+You log in as `ssm-user`, which has `sudo`. Docker and the compose plugin are installed. The
+stack (PostgreSQL, migrations, ingestion...) lives in `/opt/smart-gardening/repo/infra/server` and
+is deployed with one script; see [`server/README.md`](server/README.md):
 
 ```sh
-sudo -i
-cd /opt/smart-gardening
-docker compose up -d
+sudo /opt/smart-gardening/repo/infra/server/scripts/deploy.sh main
 ```
 
 Type `exit` to close the session.

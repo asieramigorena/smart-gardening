@@ -1,0 +1,6 @@
+# The build context is the whole repository: send only what the image needs.
+*
+!DB/ingest/requirements.txt
+!DB/ingest/ingest/
+!docs/contracts/*.schema.json
+**/__pycache__
