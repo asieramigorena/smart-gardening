@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/asieramigorena/smart-gardening/docs/contracts/events.schema.json",
+  "title": "Command event",
+  "description": "Published by a device on smart-gardening/{device_id}/events to report what happened to a command.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "command_id", "type", "ts"],
+  "properties": {
+    "schema_version": {
+      "description": "Contract version. Bumped on any breaking change.",
+      "const": 1
+    },
+    "command_id": {
+      "description": "command_id of the command this event refers to.",
+      "$ref": "commands.schema.json#/$defs/uuid"
+    },
+    "type": {
+      "enum": ["irrigation_started", "irrigation_finished", "command_rejected"]
+    },
+    "ts": {
+      "description": "When the event happened, UTC.",
+      "$ref": "readings.schema.json#/$defs/utc_timestamp"
+    },
+    "duration_s": {
+      "description": "irrigation_started: planned duration. irrigation_finished: actual time the valve was open (can be shorter than planned).",
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 900
+    },
+    "reason": {
+      "description": "Why the command was rejected. Only in command_rejected.",
+      "enum": ["expired", "duplicate", "invalid", "busy"]
+    }
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"type": {"const": "command_rejected"}}},
+      "then": {"required": ["reason"], "not": {"required": ["duration_s"]}},
+      "else": {"required": ["duration_s"], "not": {"required": ["reason"]}}
+    }
+  ]
+}

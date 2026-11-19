@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "device_id": "pi-01",
+  "zone": "bed-1",
+  "ts": "2026-11-19T10:15:00Z",
+  "soil_moisture_raw": 2310,
+  "soil_moisture": 41.5,
+  "air_temp": 14.2,
+  "air_humidity": 63.0,
+  "light": 72
+}

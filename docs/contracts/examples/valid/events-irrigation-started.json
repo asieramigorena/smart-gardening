@@ -1,0 +1,7 @@
+{
+  "schema_version": 1,
+  "command_id": "3f6c2a1e-8b4d-4c7a-9e21-5d0b7f9a1c34",
+  "type": "irrigation_started",
+  "ts": "2026-11-19T10:30:02Z",
+  "duration_s": 120
+}
