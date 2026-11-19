@@ -1,8 +1,8 @@
 name: Python
 
 # No `paths` filter on the triggers: a workflow skipped by `paths` never reports a status,
-# which would block PRs if `Python / lint` is a required check. The `changes` job decides
-# instead, and a skipped `lint` job counts as passed.
+# which would block PRs if `Python / lint` or `Python / contracts` is a required check. The
+# `changes` job decides instead, and a skipped job counts as passed.
 on:
   pull_request:
     branches: [dev, main]
@@ -26,6 +26,7 @@ jobs:
       pull-requests: read # list the files changed in the PR
     outputs:
       python: ${{ steps.filter.outputs.python }}
+      contracts: ${{ steps.filter.outputs.contracts }}
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -43,6 +44,10 @@ jobs:
             python:
               - "node/**"
               - "ML/**"
+              - "docs/contracts/**"
+              - ".github/workflows/python.yml"
+            contracts:
+              - "docs/contracts/**"
               - ".github/workflows/python.yml"
 
   lint:
@@ -68,4 +73,29 @@ jobs:
 
       # Real errors only (syntax errors, undefined names, unused imports...), no style rules.
       - name: Lint
-        run: ruff check node ML --select E4,E7,E9,F --output-format=github
+        run: ruff check node ML docs/contracts --select E4,E7,E9,F --output-format=github
+
+  contracts:
+    name: contracts
+    needs: changes
+    if: needs.changes.outputs.contracts == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.11"
+
+      # Pinned in docs/contracts/requirements.txt.
+      - name: Install jsonschema
+        run: pip install -r docs/contracts/requirements.txt
+
+      # Schemas are valid draft 2020-12, valid examples pass and invalid ones fail.
+      - name: Test message contract
+        run: python -m unittest discover -s docs/contracts -p "test_*.py" -v
