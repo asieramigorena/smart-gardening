@@ -1,4 +1,5 @@
-# Instance role: SSM Session Manager, read the project's parameters, and read/write the backups bucket.
+# Instance role: SSM Session Manager, read the project's parameters, read/write the backups bucket,
+# consume the ingestion queue and publish irrigation commands to the devices.
 
 data "aws_caller_identity" "current" {}
 
@@ -80,6 +81,40 @@ data "aws_iam_policy_document" "ec2" {
       "s3:ListMultipartUploadParts",
     ]
     resources = ["${aws_s3_bucket.backups.arn}/*"]
+  }
+
+  # The server has no business with the devices' private keys, even though they live under
+  # /smart-gardening/*. An explicit Deny wins over the Allow above.
+  statement {
+    sid       = "DenyDevicePrivateKeys"
+    effect    = "Deny"
+    actions   = ["ssm:GetParameter", "ssm:GetParameters", "ssm:GetParametersByPath"]
+    resources = ["${local.ssm_parameter_arn_prefix}/smart-gardening/iot/*/private_key"]
+  }
+
+  statement {
+    sid = "ConsumeIngestQueue"
+    actions = [
+      "sqs:ReceiveMessage",
+      "sqs:DeleteMessage",
+      "sqs:ChangeMessageVisibility",
+      "sqs:GetQueueAttributes",
+    ]
+    resources = [aws_sqs_queue.ingest.arn]
+  }
+
+  # Messages the server cannot process (e.g. they break the contract) are moved to the DLQ.
+  statement {
+    sid       = "SendToIngestDlq"
+    actions   = ["sqs:SendMessage"]
+    resources = [aws_sqs_queue.ingest_dlq.arn]
+  }
+
+  # Irrigation commands, through the iot-data Publish API (HTTPS + SigV4, no MQTT connection).
+  statement {
+    sid       = "PublishCommands"
+    actions   = ["iot:Publish"]
+    resources = ["${local.iot_arn_prefix}:topic/smart-gardening/*/commands"]
   }
 }
 
