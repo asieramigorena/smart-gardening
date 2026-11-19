@@ -1,0 +1,7 @@
+{
+  "schema_version": 1,
+  "command_id": "9a1b7c2d-0e3f-4a5b-8c6d-7e8f9a0b1c2d",
+  "type": "command_rejected",
+  "ts": "2026-11-19T10:31:00Z",
+  "reason": "busy"
+}

@@ -1,0 +1,4 @@
+# Only needed to run test_contracts.py (CI installs exactly these versions).
+jsonschema==4.26.0
+# Enables the "date-time" format check in jsonschema's FormatChecker.
+rfc3339-validator==0.1.4
