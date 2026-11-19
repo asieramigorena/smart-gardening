@@ -20,6 +20,10 @@ CLAUDE.md
 *.tfstate.*
 *.tfvars
 !*.tfvars.example
+# Saved plans can contain secrets in plain text
+tfplan
+*.tfplan
+*.tfplan.json
 crash.log
 crash.*.log
 override.tf
