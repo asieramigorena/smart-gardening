@@ -32,3 +32,33 @@ output "db_password_command" {
   description = "Print the database password."
   value       = "aws ssm get-parameter --region ${var.aws_region} --name ${aws_ssm_parameter.db_password.name} --with-decryption --query Parameter.Value --output text"
 }
+
+output "ingest_queue_url" {
+  description = "URL of the ingestion SQS queue (also in SSM /smart-gardening/ingest/queue_url)."
+  value       = aws_sqs_queue.ingest.url
+}
+
+output "ingest_dlq_url" {
+  description = "URL of the ingestion dead-letter queue (also in SSM /smart-gardening/ingest/dlq_url)."
+  value       = aws_sqs_queue.ingest_dlq.url
+}
+
+output "iot_topic_rule" {
+  description = "Name of the IoT topic rule that forwards readings and events to SQS."
+  value       = aws_iot_topic_rule.ingest.name
+}
+
+output "iot_endpoint" {
+  description = "AWS IoT Core data endpoint (ATS) for MQTT and iot-data Publish (also in SSM /smart-gardening/iot/endpoint)."
+  value       = data.aws_iot_endpoint.data.endpoint_address
+}
+
+output "iot_device_credentials_commands" {
+  description = "Per device: commands that save its certificate and private key to the current directory."
+  value = {
+    for d in var.devices : d => {
+      certificate = "aws ssm get-parameter --region ${var.aws_region} --name ${aws_ssm_parameter.iot_certificate_pem[d].name} --with-decryption --query Parameter.Value --output text > ${d}.cert.pem"
+      private_key = "(umask 077; aws ssm get-parameter --region ${var.aws_region} --name ${aws_ssm_parameter.iot_private_key[d].name} --with-decryption --query Parameter.Value --output text > ${d}.private.key)"
+    }
+  }
+}
