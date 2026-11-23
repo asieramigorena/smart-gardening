@@ -203,3 +203,38 @@ the decision service (~256 MB each, see the placeholders). If containers get OOM
 See "Running it locally" in [`DB/README.md`](../../DB/README.md#running-it-locally-no-aws):
 the same compose file works on a laptop with a fake `.env` (everything except `ingest`, which
 needs AWS). `docker compose --env-file <file> config` validates the file.
+
+## Grafana
+
+Grafana is provisioned from `infra/server/grafana/provisioning/` and loads dashboards from
+`infra/server/grafana/dashboards/`. Its port is published only on the server's loopback
+(`127.0.0.1:3000`).
+
+### Opening Grafana from your laptop
+
+Open an SSM port-forwarding tunnel to the EC2 instance:
+
+```sh
+aws ssm start-session --target <instance_id> \
+  --document-name AWS-StartPortForwardingSession \
+  --parameters '{"portNumber":["3000"],"localPortNumber":["3000"]}'
+```
+
+Then browse to `http://localhost:3000` (user `admin`, password from SSM
+`/smart-gardening/grafana/admin_password`).
+
+### Local development with sample data
+
+To run Postgres, migrations, sample seed data (`grafana/dev-seed.sql`, never applied in
+production) and Grafana locally without AWS:
+
+```sh
+docker compose -f docker-compose.dev.yml up -d
+# http://localhost:3000 (admin / admin)
+```
+
+### Editing the dashboard
+
+1. Make your changes in the Grafana UI.
+2. Open **Dashboard settings -> JSON Model** (or **Share -> Export -> Save to file**) and export the JSON.
+3. Save it to `infra/server/grafana/dashboards/smart-gardening.json` and commit the change.
