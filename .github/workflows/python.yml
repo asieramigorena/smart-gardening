@@ -1,8 +1,9 @@
 name: Python
 
 # No `paths` filter on the triggers: a workflow skipped by `paths` never reports a status,
-# which would block PRs if `Python / lint`, `Python / contracts` or `Python / ingest` is a required check. The
-# `changes` job decides instead, and a skipped job counts as passed.
+# which would block PRs if `Python / lint`, `Python / contracts`, `Python / ingest` or
+# `Python / node` is a required check. The `changes` job decides instead, and a skipped job
+# counts as passed.
 on:
   pull_request:
     branches: [dev, main]
@@ -28,6 +29,7 @@ jobs:
       python: ${{ steps.filter.outputs.python }}
       contracts: ${{ steps.filter.outputs.contracts }}
       ingest: ${{ steps.filter.outputs.ingest }}
+      node: ${{ steps.filter.outputs.node }}
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -56,6 +58,11 @@ jobs:
             ingest:
               - "DB/**"
               - "tools/**"
+              - "docs/contracts/**"
+              - ".github/workflows/python.yml"
+            # The node validates its readings against the contract schemas before sending.
+            node:
+              - "node/**"
               - "docs/contracts/**"
               - ".github/workflows/python.yml"
 
@@ -136,3 +143,31 @@ jobs:
 
       - name: Test simulator
         run: python -m unittest discover -s tools/simulator -v
+
+  node:
+    name: node
+    needs: changes
+    if: needs.changes.outputs.node == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.11"
+
+      # --no-deps, as on the Pi (see node/setup.sh): grove.py would pull RPi.GPIO, which does not
+      # build here. The hardware modules (grove, lgpio) are imported lazily, so the tests run without them.
+      - name: Install dependencies
+        run: pip install --no-deps -r node/requirements.txt
+
+      # No hardware and no network: sensors and DHT11 frames are simulated.
+      - name: Test node
+        run: python -m unittest discover -s node/tests -t node -v
+        env:
+          PYTHONPATH: node/src

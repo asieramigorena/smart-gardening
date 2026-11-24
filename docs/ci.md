@@ -12,6 +12,7 @@ than the automatic `GITHUB_TOKEN`, which is read-only.
 | `.github/workflows/python.yml` | `Python / lint` | `node/`, `ML/`, `DB/`, `tools/` or `docs/contracts/` changed | `ruff check` with real-error rules only (syntax errors, undefined names, unused imports). No style rules. |
 | `.github/workflows/python.yml` | `Python / contracts` | `docs/contracts/` changed | Runs `docs/contracts/test_contracts.py` (unittest + jsonschema): the message schemas are valid draft 2020-12, valid examples pass and invalid ones fail. |
 | `.github/workflows/python.yml` | `Python / ingest` | `DB/`, `tools/` or `docs/contracts/` changed | Unit tests (unittest) of the ingestion service (`DB/ingest/tests`, SQS and PostgreSQL mocked) and of the simulator (`tools/simulator`). |
+| `.github/workflows/python.yml` | `Python / node` | `node/` or `docs/contracts/` changed | Unit tests (unittest) of the Raspberry Pi node (`node/tests`): config, readings message against the contract, sensor failures and DHT11 decoding. No hardware and no network needed. |
 | `.github/workflows/infra.yml` | `Infra / terraform` | `infra/` changed | `terraform fmt -check`, then `terraform init -backend=false`, `terraform validate` and `tflint` in each root module (`infra/bootstrap`, `infra/main`). |
 
 `.github/dependabot.yml` opens a weekly PR against `dev` to update the actions used by the workflows.
@@ -24,9 +25,10 @@ Configure these as required status checks in the branch protection rules of `dev
 - `Python / lint`
 - `Python / contracts`
 - `Python / ingest`
+- `Python / node`
 - `Infra / terraform`
 
-All five can be required even though the Python and Infra jobs only run on some PRs (see below).
+All six can be required even though the Python and Infra jobs only run on some PRs (see below).
 
 ## Design decisions
 
@@ -58,6 +60,7 @@ break CI without a code change:
 | Python | 3.11 (Raspberry Pi OS Bookworm) | `python.yml` |
 | jsonschema | 4.26.0 (+ rfc3339-validator 0.1.4) | `docs/contracts/requirements.txt` |
 | Ingestion dependencies (boto3, psycopg, jsonschema) | see file | `DB/ingest/requirements.txt` |
+| Node dependencies (installed with `--no-deps`, as on the Pi) | see file | `node/requirements.txt` |
 | Terraform | 1.17.2 | `infra/mise.toml` |
 | TFLint | 0.66.0 (+ AWS ruleset 0.50.0) | `infra/mise.toml` (ruleset: `infra/.tflint.hcl`) |
 | mise | 2026.11.0 | `infra.yml` |
@@ -89,6 +92,10 @@ python -m unittest discover -s docs/contracts -p "test_*.py"
 pip install -r DB/ingest/requirements.txt
 python -m unittest discover -s DB/ingest/tests -t DB/ingest
 python -m unittest discover -s tools/simulator
+
+# Node tests (in a virtualenv; --no-deps as on the Pi, see node/setup.sh)
+pip install --no-deps -r node/requirements.txt
+PYTHONPATH=node/src python -m unittest discover -s node/tests -t node
 
 # Terraform (versions from infra/mise.toml; run `mise install` once)
 cd infra
