@@ -11,6 +11,7 @@ from unittest import mock
 import psycopg
 from botocore.exceptions import ClientError
 
+from ingest.store import UnknownZone
 from ingest.worker import Worker
 
 from .helpers import CONTRACT, REAL_SQS_BODY
@@ -121,6 +122,19 @@ class InvalidMessageTests(WorkerTestCase):
         self.receive("not json")
         self.worker.run_once()
         self.sqs.delete_message.assert_not_called()
+
+    def test_unknown_zone_goes_to_dlq_with_reason_then_is_deleted(self):
+        self.store.side_effect = UnknownZone("bed1")
+        self.receive(REAL_SQS_BODY)
+
+        self.assertTrue(self.worker.run_once())
+
+        self.sqs.send_message.assert_called_once()
+        kwargs = self.sqs.send_message.call_args.kwargs
+        self.assertEqual(kwargs["QueueUrl"], DLQ)
+        self.assertEqual(kwargs["MessageBody"], REAL_SQS_BODY)
+        self.assertTrue(kwargs["MessageAttributes"]["error"]["StringValue"].startswith("unknown_zone"))
+        self.sqs.delete_message.assert_called_once_with(QueueUrl=QUEUE, ReceiptHandle="rh-1")
 
 
 class DatabaseErrorTests(WorkerTestCase):

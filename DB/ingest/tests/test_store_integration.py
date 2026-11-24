@@ -2,7 +2,7 @@
 
 Skipped unless INGEST_TEST_DATABASE_URL points to a database with the migrations applied
 (e.g. the local compose stack, see DB/README.md). Uses its own device and zone IDs and deletes
-them afterwards.
+them afterwards. Connect as a role that can insert zones (`app`), since the test creates its own.
 """
 
 from __future__ import annotations
@@ -12,7 +12,7 @@ import unittest
 import uuid
 
 from ingest.messages import parse
-from ingest.store import store
+from ingest.store import UnknownZone, store
 
 from .helpers import CONTRACT, enrich, example
 
@@ -30,6 +30,9 @@ class StoreIntegrationTests(unittest.TestCase):
         self.device = f"test-{suffix}"
         self.zone = f"test-{suffix}"
         self.addCleanup(self.cleanup)
+        # In production zones come from migrations; here the test creates its own.
+        with self.conn.cursor() as cur:
+            cur.execute("INSERT INTO zones (id, name) VALUES (%s, %s)", (self.zone, self.zone))
 
     def cleanup(self):
         with self.conn.cursor() as cur:
@@ -43,11 +46,11 @@ class StoreIntegrationTests(unittest.TestCase):
             cur.execute(sql, params)
             return cur.fetchone()
 
-    def reading(self):
-        payload = {**example("valid", "readings-full.json"), "zone": self.zone}
+    def reading(self, zone=None):
+        payload = {**example("valid", "readings-full.json"), "zone": zone or self.zone}
         return parse(enrich(payload, "readings", device_id=self.device), CONTRACT)
 
-    def test_reading_from_unknown_device_registers_device_and_zone(self):
+    def test_reading_from_unknown_device_in_existing_zone_registers_device(self):
         self.assertTrue(store(self.conn, self.reading()))
         self.assertEqual(self.one("SELECT zone_id FROM devices WHERE id = %s", self.device), (self.zone,))
         row = self.one(
@@ -58,6 +61,14 @@ class StoreIntegrationTests(unittest.TestCase):
         self.assertEqual(row[1], "14.2")
         self.assertEqual(row[2].year, 2026)
         self.assertEqual(row[3], "readings")
+
+    def test_reading_for_unknown_zone_is_rejected_and_nothing_is_written(self):
+        ghost = f"{self.zone}-typo"
+        with self.assertRaises(UnknownZone):
+            store(self.conn, self.reading(zone=ghost))
+        self.assertEqual(self.one("SELECT count(*) FROM zones WHERE id = %s", ghost), (0,))
+        self.assertEqual(self.one("SELECT count(*) FROM devices WHERE id = %s", self.device), (0,))
+        self.assertEqual(self.one("SELECT count(*) FROM readings WHERE device_id = %s", self.device), (0,))
 
     def test_reading_is_idempotent(self):
         message = self.reading()

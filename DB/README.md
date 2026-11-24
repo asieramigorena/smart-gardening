@@ -72,12 +72,35 @@ time), `valid_at` (hour the forecast is for), `precipitation_mm`, `precipitation
 Passwords never appear in the repo: the `db-roles` step of the compose stack sets them from SSM
 on every deploy, so rotating one in SSM and redeploying is enough.
 
-### Unknown devices
+### Unknown devices and zones
 
-A reading from a device that is not in `devices` is **not** dropped: the ingestion service
-creates the device (and its zone, if new) and logs a warning (`unknown device registered`).
+A reading from a device that is not in `devices` is **not** dropped: if its zone exists, the
+ingestion service creates the device and logs a warning (`unknown device registered`).
 An event from an unknown device creates it without a zone; its first reading sets the zone.
-Rename the zone afterwards if needed: `UPDATE zones SET name = 'Front bed' WHERE id = 'bed-2'`.
+
+Zones are **not** created automatically. A reading whose `zone` is not in `zones` (e.g. a typo
+such as `bed1` for `bed-1` in the node's `ZONE`) is invalid: it is logged (`invalid message`)
+and sent to the DLQ with the reason `unknown_zone: ...`, and nothing is written. Fix the node's
+`ZONE`, or add the zone (below) if it really is a new one. Messages in the DLQ with an `error`
+attribute are not replayed (see the DLQ section of [`infra/server/README.md`](../infra/server/README.md)).
+
+### Adding a zone
+
+Zones are created with a dbmate migration (see [Migrations](#migrations)), like the seed
+`20261120000003_seed_bed1_pi01.sql`:
+
+```sql
+-- migrate:up
+INSERT INTO zones (id, name) VALUES ('bed-2', 'Bed 2') ON CONFLICT DO NOTHING;
+
+-- migrate:down
+DELETE FROM zones WHERE id = 'bed-2';
+```
+
+The `id` must follow the contract's zone format (`^[a-z0-9][a-z0-9_-]{0,31}$`) and match the
+node's `ZONE`. The next deploy applies it before the ingestion service starts. Create the zone
+before provisioning a node for it; otherwise its readings go to the DLQ until it exists.
+To rename a zone, use a migration too: `UPDATE zones SET name = 'Front bed' WHERE id = 'bed-2'`.
 
 ## Migrations
 
@@ -162,8 +185,9 @@ and writes `readings` and `irrigation_events`. For each message:
    invalid.
 2. Valid: `INSERT ... ON CONFLICT DO NOTHING` in one transaction → commit → delete from the queue.
    Duplicates are deleted too.
-3. Invalid: logged with the reason, copied to the DLQ with a message attribute `error` (the
-   reason), then deleted from the queue.
+3. Invalid (fails the contract, or a reading for a zone that is not in `zones`): logged with the
+   reason, copied to the DLQ with a message attribute `error` (the reason, e.g.
+   `unknown_zone: 'bed1' ...`), then deleted from the queue.
 4. Database error: **not** deleted. SQS redelivers it after 60 s and moves it to the DLQ after 5
    attempts. If the database is down, the service stops receiving and retries with backoff
    (1 s → 60 s).
