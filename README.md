@@ -22,6 +22,21 @@ Create your local environment file in the repository root and fill in the secret
 template: it lists every variable the code needs, with public values filled in and secrets left
 empty. When you add a new variable, add it to `.env.example` too.
 
+### Raspberry Pi node
+
+Raspberry Pi 5 + Grove Base Hat. Wiring: soil moisture on A0, light on A2, DHT11 on D5, LED on D16.
+
+1. Add the device to `var.devices` in `infra/` and apply (creates its IoT thing and certificate).
+2. On the Pi: `git clone` this repository, then `cd smart-gardening/node && ./setup.sh`.
+   It installs the packages, enables I2C (reboot and run it again if asked) and creates `node/.venv`.
+3. From your laptop, with the `smart-gardening` AWS profile:
+   `node/provision.sh <pi-host> <device-id> <zone>` (e.g. `pi-01 bed-1`).
+4. On the Pi: `./setup.sh` again. It starts the `smart-gardening-node` service, which publishes
+   one reading every hour.
+
+Check it with `./run.sh -m gardening_node.check_sensors` (sensors) and
+`journalctl -u smart-gardening-node -f` (service).
+
 ## CI
 
 Every pull request to `dev` or `main` runs these checks; all must pass before merging:
