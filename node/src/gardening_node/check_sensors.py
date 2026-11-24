@@ -1,7 +1,8 @@
 """Quick check of the node's sensors.
 
-Reads each sensor several times and prints the result. Each sensor is checked
-separately: if one fails, the others are still read.
+Takes several readings with sensors.read_all() (the same reading the node
+publishes) and prints the result per sensor. A failing sensor does not stop
+the others.
 
 Usage (from node/):
     ./run.sh -m gardening_node.check_sensors            # 5 readings, 1 s apart
@@ -13,12 +14,6 @@ import time
 
 from . import sensors
 
-SENSORS = {
-    "moisture (A0, raw 0-4095)": sensors.read_moisture,
-    "light (A2, %)": sensors.read_light,
-    "temperature/humidity (D5)": sensors.read_temperature_humidity,
-}
-
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
@@ -27,26 +22,21 @@ def main():
     parser.add_argument("--led", action="store_true", help="blink the LED")
     args = parser.parse_args()
 
-    results = {name: [] for name in SENSORS}
+    readings = []
     errors = {}
-
     for i in range(args.samples):
-        for name, read in SENSORS.items():
-            if name in errors:
-                continue
-            try:
-                results[name].append(read())
-            except Exception as exc:  # a broken sensor must not stop the others
-                errors[name] = exc
+        readings.append(sensors.read_all(errors))
         if i < args.samples - 1:
             time.sleep(args.interval)
 
     print(f"{'sensor':32} {'status':8} readings")
-    for name in SENSORS:
+    for fields in sensors.READERS:
+        name = ",".join(fields)
         if name in errors:
-            print(f"{name:32} {'FAIL':8} {type(errors[name]).__name__}: {errors[name]}")
+            print(f"{name:32} {'FAIL':8} {errors[name]}")
         else:
-            print(f"{name:32} {'OK':8} {results[name]}")
+            values = [r[fields[0]] if len(fields) == 1 else tuple(r[f] for f in fields) for r in readings]
+            print(f"{name:32} {'OK':8} {values}")
 
     if args.led:
         print("LED (D16): blinking...")

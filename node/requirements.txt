@@ -1,3 +1,17 @@
 # Installed with --no-deps (see setup.sh): grove.py declares RPi.GPIO and rpi_ws281x as
 # dependencies, which do not work on the Pi 5; GPIO is provided by python3-rpi-lgpio (apt).
 Seeed-grove.py==0.8
+paho-mqtt==2.2.0
+python-dotenv==1.2.4
+APScheduler==3.11.3
+# APScheduler's only dependency (listed because of --no-deps)
+tzlocal==5.4.5
+# Contract validation before sending (docs/contracts, rule 7). Same versions as
+# docs/contracts/requirements.txt, plus their dependencies (listed because of --no-deps).
+jsonschema==4.26.0
+rfc3339-validator==0.1.4
+attrs==26.1.0
+referencing==0.37.0
+jsonschema-specifications==2025.9.1
+rpds-py==2026.9.1
+six==1.17.0
