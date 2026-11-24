@@ -2,7 +2,8 @@
 
 Delivery rules:
 - Stored (or duplicate) -> delete from the queue, only after the commit.
-- Invalid (can never be stored) -> copy to the DLQ with the reason, then delete.
+- Invalid (can never be stored: fails the contract, or a reading for an unknown zone) -> copy to
+  the DLQ with the reason, then delete.
 - Database error -> do not delete: SQS makes it visible again after the visibility timeout and
   moves it to the DLQ after 5 receives (redrive policy in infra/main/queue.tf).
 """
@@ -144,15 +145,15 @@ class Worker:
         try:
             parsed = parse(message["Body"], self.contract)
         except InvalidMessage as exc:
-            reason = str(exc)
-            log.warning("invalid message", extra={"fields": {**fields, "reason": reason, "body": message["Body"][:500]}})
-            if self.dead_letter(message, reason):
-                self.delete(message, fields)
+            self.reject(message, fields, str(exc))
             return
 
         fields.update(kind=type(parsed).__name__.lower(), device_id=parsed.device_id)
         try:
             inserted = self.store(self.conn, parsed)
+        except InvalidMessage as exc:  # e.g. UnknownZone: valid JSON, but it can never be stored
+            self.reject(message, fields, str(exc))
+            return
         except psycopg.OperationalError as exc:
             log.error("database connection lost, message left in the queue", extra={"fields": {**fields, "error": str(exc).strip()}})
             self.close()
@@ -164,6 +165,12 @@ class Worker:
 
         log.info("stored" if inserted else "duplicate ignored", extra={"fields": fields})
         self.delete(message, fields)
+
+    def reject(self, message: dict[str, Any], fields: dict[str, Any], reason: str) -> None:
+        """Invalid message: log it, copy it to the DLQ with the reason, then delete it."""
+        log.warning("invalid message", extra={"fields": {**fields, "reason": reason, "body": message["Body"][:500]}})
+        if self.dead_letter(message, reason):
+            self.delete(message, fields)
 
     # --- SQS helpers -----------------------------------------------------------------------
 
