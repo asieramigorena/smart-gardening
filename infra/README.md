@@ -182,7 +182,7 @@ stack (PostgreSQL, migrations, ingestion...) lives in `/opt/smart-gardening/repo
 is deployed with one script; see [`server/README.md`](server/README.md):
 
 ```sh
-sudo /opt/smart-gardening/repo/infra/server/scripts/deploy.sh main
+sudo /opt/smart-gardening/repo/infra/server/scripts/deploy.sh dev   # main only after the first release
 ```
 
 Type `exit` to close the session.
