@@ -38,11 +38,12 @@ echo "     /dev/i2c-1 available"
 echo "3/4  Virtual environment in node/$VENV (sees the system GPIO packages)"
 [ -d "$VENV" ] || python3 -m venv --system-site-packages "$VENV"
 
-echo "4/4  Python dependencies"
+echo "4/4  Python dependencies and the node package (editable, from src/)"
 "$VENV/bin/pip" install --quiet --upgrade pip
 # --no-deps: grove.py would pull the classic RPi.GPIO and rpi_ws281x, which do not work
 # on the Pi 5 (GPIO is provided by python3-rpi-lgpio, installed with apt).
 "$VENV/bin/pip" install --quiet --no-deps -r requirements.txt
+"$VENV/bin/pip" install --quiet --no-deps -e .
 
 echo
 echo "Installation complete. Check the sensors with:  ./run.sh -m gardening_node.check_sensors"
