@@ -102,7 +102,7 @@
             "id": 8,
             "type": "timeseries",
             "title": "Soil moisture raw (ADC)",
-            "description": "Raw soil_moisture_raw ADC value (0-4095) per zone, 5 min averages. Not comparable between sensors until they are calibrated.",
+            "description": "Raw soil_moisture_raw ADC value (0-100) per zone, 5 min averages. Not comparable between sensors until they are calibrated.",
             "gridPos": {
                 "h": 8,
                 "w": 12,
@@ -118,7 +118,7 @@
                     "unit": "none",
                     "decimals": 0,
                     "min": 0,
-                    "max": 4095
+                    "max": 100
                 },
                 "overrides": []
             },
