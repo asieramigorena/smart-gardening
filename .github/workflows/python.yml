@@ -54,7 +54,7 @@ jobs:
             contracts:
               - "docs/contracts/**"
               - ".github/workflows/python.yml"
-            # The ingestion service and the simulator validate against the contract schemas.
+            # The ingestion service, the simulator and the e2e check validate against the contract schemas.
             ingest:
               - "DB/**"
               - "tools/**"
@@ -133,9 +133,10 @@ jobs:
         with:
           python-version: "3.11"
 
-      # Pinned in DB/ingest/requirements.txt (also covers the simulator test).
+      # Pinned in DB/ingest/requirements.txt (also covers the simulator test) and
+      # tools/e2e_check/requirements.txt (same versions).
       - name: Install dependencies
-        run: pip install -r DB/ingest/requirements.txt
+        run: pip install -r DB/ingest/requirements.txt -r tools/e2e_check/requirements.txt
 
       # SQS and PostgreSQL are mocked: no AWS access and no database needed.
       - name: Test ingestion service
@@ -143,6 +144,10 @@ jobs:
 
       - name: Test simulator
         run: python -m unittest discover -s tools/simulator -v
+
+      # AWS and PostgreSQL are mocked.
+      - name: Test end-to-end check
+        run: python -m unittest discover -s tools/e2e_check -v
 
   node:
     name: node
