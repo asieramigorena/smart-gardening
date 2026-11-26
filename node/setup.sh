@@ -51,7 +51,6 @@ UNIT=smart-gardening-node
 if [ ! -f "$CONFIG_DIR/node.env" ]; then
     echo "     node not provisioned yet: run provision.sh from an operator machine, then ./setup.sh again"
 else
-    # Same unit as the Lab 5 publisher (lab5-publisher.service), filled in for this node.
     # Exit code 78 = config error: restarting would not fix it, so systemd does not retry.
     SERVICE="[Unit]
 Description=Smart gardening node: periodic sensor readings to AWS IoT Core

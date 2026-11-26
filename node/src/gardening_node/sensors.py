@@ -1,7 +1,7 @@
 """Grove sensor readings for the node (Raspberry Pi 5 + Grove Base Hat).
 
 This is the only module that knows the wiring. The rest of the code (checks,
-MQTT publishing) just calls read_all(), as in the Lab 5 sensors.py.
+MQTT publishing) just calls read_all().
 
 Wiring:
     Soil moisture            A0   analog
@@ -73,7 +73,7 @@ READERS = {
 
 
 def read_all(errors=None, adc_address=None):
-    """One reading: a FLAT dict of numbers (no strings, no nesting), as in Lab 5.
+    """One reading: a FLAT dict of numbers (no strings, no nesting).
 
     A sensor that fails gives None in its fields instead of losing the whole
     reading. If `errors` is a dict, the failures are added to it as

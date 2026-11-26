@@ -58,17 +58,9 @@ class Publisher:
     def start(self, wait_s=CONNECT_WAIT_S):
         """Connect in the background and wait up to `wait_s` for the first connection.
 
-        Why wait: connect_async() returns at once and the TLS handshake + CONNACK
-        take a moment (about a second, more on a Pi or with a slow network). The
-        service takes its first reading right after start(), so without waiting
-        that reading was always published before the connection was up: paho
-        queued it and delivered it a second later, but every start logged a
-        misleading "not connected" warning.
-
-        Not waiting forever: if the network is down at boot, start() returns after
-        `wait_s`, paho keeps retrying, and readings are queued until it connects
-        (then the warning is real). Returns True if connected.
-        Solution provided by Claude
+        Waiting avoids queuing the initial reading while the TLS handshake is still
+        in progress, while staying bounded so startup proceeds if the network is down.
+        Returns True if connected.
         """
         self.client.connect_async(self.cfg.endpoint, PORT, keepalive=KEEPALIVE_S)
         self.client.loop_start()
