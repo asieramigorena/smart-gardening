@@ -87,7 +87,9 @@ attribute are not replayed (see the DLQ section of [`infra/server/README.md`](..
 ### Adding a zone
 
 Zones are created with a dbmate migration (see [Migrations](#migrations)), like the seed
-`20261120000003_seed_bed1_pi01.sql`:
+`20261120000003_seed_bed1_pi01.sql` (`bed-1`, the real bed) or
+`20261126110000_add_e2e_test_zone.sql` (`e2e-test`, test-only, no valve: see the Grafana and
+decision service sections):
 
 ```sql
 -- migrate:up
@@ -268,6 +270,11 @@ A "do not irrigate" decision is the same `INSERT` with `irrigate = false`, no `d
 and no `command_id`. The device answers on `/events`, which ends up in `irrigation_events`:
 join on `command_id` to know whether a command was executed or rejected.
 
+**Skip the `e2e-test` zone.** It only holds the test readings of the end-to-end check
+([`tools/e2e_check`](../tools/e2e_check/README.md), device `e2e-check`) and has no valve. Never
+make decisions, fetch forecasts or send commands for it: if the service loops over `zones`, use
+`SELECT id FROM zones WHERE id <> 'e2e-test'`.
+
 ## For Grafana
 
 Grafana runs in the same compose stack (placeholder `grafana` in
@@ -292,7 +299,7 @@ Useful queries (Grafana macros: `$__timeFilter`, `$__timeGroupAlias`):
 -- Soil moisture and air temperature per zone over time (time series)
 SELECT $__timeGroupAlias(ts, 5m), zone_id AS metric, avg(soil_moisture_raw) AS soil_moisture_raw
 FROM readings
-WHERE $__timeFilter(ts)
+WHERE $__timeFilter(ts) AND zone_id <> 'e2e-test'
 GROUP BY 1, 2
 ORDER BY 1;
 
@@ -300,6 +307,7 @@ ORDER BY 1;
 SELECT DISTINCT ON (device_id)
   device_id, zone_id, ts, now() - ts AS age, soil_moisture_raw, soil_moisture, air_temp, air_humidity, light
 FROM readings
+WHERE zone_id <> 'e2e-test'
 ORDER BY device_id, ts DESC;
 
 -- Decisions (table or annotations)
@@ -317,6 +325,12 @@ ORDER BY e.ts DESC;
 ```
 
 Sensor columns are NULL when a sensor failed: Grafana shows gaps, which is what we want.
+
+**Exclude the `e2e-test` zone from every panel** (`zone_id <> 'e2e-test'`, as in the queries
+above). It is a test-only zone without a valve: the end-to-end check
+([`tools/e2e_check`](../tools/e2e_check/README.md)) publishes a reading there as device
+`e2e-check` on every run. A zone dashboard variable should come from
+`SELECT id FROM zones WHERE id <> 'e2e-test'`.
 
 Open Grafana from your laptop (its port is published only on the server's loopback):
 
