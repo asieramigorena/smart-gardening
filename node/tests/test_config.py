@@ -55,6 +55,22 @@ class LoadConfigTest(unittest.TestCase):
         with self.assertRaises(ConfigError):
             load_config(self.dir, environ={})
 
+    def test_read_interval_defaults_to_300(self):
+        self._write(ENV)
+        self.assertEqual(load_config(self.dir, environ={}).read_interval_s, 300)
+
+    def test_read_interval_from_file_and_env_override(self):
+        self._write(ENV + "READ_INTERVAL_S=60\n")
+        self.assertEqual(load_config(self.dir, environ={}).read_interval_s, 60)
+        self.assertEqual(load_config(self.dir, environ={"READ_INTERVAL_S": "10"}).read_interval_s, 10)
+
+    def test_read_interval_below_minimum_or_non_integer_is_rejected(self):
+        for bad in ("9", "0", "-5", "abc"):
+            with self.subTest(read_interval_s=bad):
+                self._write(ENV + f"READ_INTERVAL_S={bad}\n")
+                with self.assertRaises(ConfigError):
+                    load_config(self.dir, environ={})
+
 
 if __name__ == "__main__":
     unittest.main()

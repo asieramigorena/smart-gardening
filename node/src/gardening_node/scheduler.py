@@ -1,4 +1,4 @@
-"""Node service: one reading every hour with APScheduler (--once, --dry-run)."""
+"""Node service: periodic readings with APScheduler (--once, --dry-run)."""
 import argparse
 import signal
 import socket
@@ -85,13 +85,14 @@ def main():
 
     scheduler = BlockingScheduler()
     scheduler.add_job(
-        publish_reading, "cron", args=[publisher, validator], minute=0, jitter=JITTER_S,
+        publish_reading, "interval", seconds=cfg.read_interval_s,
+        args=[publisher, validator], jitter=min(JITTER_S, cfg.read_interval_s // 2),
         next_run_time=datetime.now(),  # also once at start (publisher.start() already waited for the connection)
         coalesce=True, misfire_grace_time=600, max_instances=1,
     )
     # systemd stops the service with SIGTERM: leave through a clean disconnect
     signal.signal(signal.SIGTERM, lambda *_: scheduler.shutdown(wait=False))
-    print(f"publishing every hour to {cfg.topic}")
+    print(f"publishing every {cfg.read_interval_s} s to {cfg.topic}")
     try:
         scheduler.start()
     except KeyboardInterrupt:
