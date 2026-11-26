@@ -2,6 +2,7 @@
 import argparse
 import signal
 import socket
+import subprocess
 import sys
 from datetime import datetime, timezone
 
@@ -14,6 +15,29 @@ from .publisher import Publisher
 # The service must not be restarted in a loop for a config error (see setup.sh)
 EX_CONFIG = 78
 JITTER_S = 60  # spread the nodes over a minute instead of all connecting at :00
+MIN_VALID_YEAR = 2026
+
+
+def check_clock(now=None):
+    """Warn if NTP is not synchronized and refuse publishing if the clock year is invalid."""
+    now = now or datetime.now(timezone.utc)
+    try:
+        res = subprocess.run(
+            ["timedatectl", "show", "-p", "NTPSynchronized", "--value"],
+            capture_output=True, text=True, timeout=5, check=False,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        print(f"warning: could not check NTP sync ({exc})", file=sys.stderr)
+    else:
+        if res.returncode != 0 or res.stdout.strip().lower() != "yes":
+            print("warning: system clock is not NTP-synchronized", file=sys.stderr)
+    if now.year < MIN_VALID_YEAR:
+        print(
+            f"system clock year is {now.year} (< {MIN_VALID_YEAR}); refusing to publish reading",
+            file=sys.stderr,
+        )
+        return False
+    return True
 
 
 def take_reading(
@@ -34,6 +58,8 @@ def take_reading(
 
 
 def publish_reading(publisher, validator):
+    if not check_clock():
+        return False
     cfg = publisher.cfg
     body = take_reading(
         cfg.thing_name, cfg.zone, adc_address=cfg.adc_address,
@@ -90,6 +116,7 @@ def main():
     except FileNotFoundError as exc:
         print(exc, file=sys.stderr)
         return EX_CONFIG
+    check_clock()
     publisher.start()
 
     if args.once:

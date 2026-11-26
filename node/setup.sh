@@ -55,8 +55,8 @@ else
     # Exit code 78 = config error: restarting would not fix it, so systemd does not retry.
     SERVICE="[Unit]
 Description=Smart gardening node: periodic sensor readings to AWS IoT Core
-After=network-online.target
-Wants=network-online.target
+After=network-online.target time-sync.target
+Wants=network-online.target time-sync.target
 
 [Service]
 User=$(id -un)
