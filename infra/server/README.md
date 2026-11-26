@@ -248,7 +248,33 @@ production) and Grafana locally without AWS:
 ```sh
 docker compose -f docker-compose.dev.yml up -d
 # http://localhost:3000 (admin / admin)
+
+# PostgreSQL is published on 127.0.0.1:15432 (not 5432, to avoid clashing with a local one)
+psql "postgresql://grafana:dev-grafana-password@localhost:15432/smart_gardening"
+
+docker compose -f docker-compose.dev.yml down -v   # stop and delete the sample data
 ```
+
+The dev passwords above are fixed, local-only values from `docker-compose.dev.yml`. The seed
+covers the cases the panels must handle: a device that has never sent a reading (`pi-03`, shown
+as `never` in red in Device status), a stale device (`pi-02`), finished, rejected and
+never-executed commands, and readings in the `e2e-test` zone, which must not appear anywhere.
+
+### Dashboard notes
+
+- **`e2e-test` zone**: excluded from the `zone` and `device` variables and, explicitly, from
+  every panel query (`zone_id <> 'e2e-test'`), as required by `DB/README.md`.
+- **Soil moisture**: two panels, `soil_moisture` (%, 0-100, calibrated sensors only) and
+  `soil_moisture_raw` (ADC, 0-4095).
+- **Daily irrigation** counts only `irrigation_finished` events (minutes from their
+  `duration_s`, liters from the `water_l` of the decision with the same `command_id`), filtered
+  by the zone of the reporting device.
+- **Device status** lists every device in `devices`, red when the last reading is older than
+  15 minutes (3 reading intervals) or when there is none (`never`).
+- **Water savings** multiplies the rain-skipped decisions (`irrigate = false AND reason ILIKE
+  '%rain%'`) by the `baseline_liters` constant (default 4.5 L, in Dashboard settings ->
+  Variables). Both are provisional: the `reason` format is set by the decision service, and
+  there is no baseline in the database yet.
 
 ### Editing the dashboard
 
