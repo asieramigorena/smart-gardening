@@ -223,6 +223,13 @@ aws ssm start-session --target <instance_id> \
 Then browse to `http://localhost:3000` (user `admin`, password from SSM
 `/smart-gardening/grafana/admin_password`).
 
+The admin password is only applied the first time Grafana starts with an empty `grafana-data`
+volume. Changing the SSM parameter later does not change it. To rotate it, run on the server:
+
+```sh
+docker compose exec grafana grafana cli admin reset-admin-password '<new password>'
+```
+
 ### Local development with sample data
 
 To run Postgres, migrations, sample seed data (`grafana/dev-seed.sql`, never applied in
