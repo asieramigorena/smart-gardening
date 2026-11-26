@@ -246,7 +246,7 @@ join on `command_id` to know whether a command was executed or rejected.
 
 ## For Grafana
 
-Grafana runs in the same compose stack (placeholder `grafana` in
+Grafana runs in the same compose stack (service `grafana` in
 `infra/server/docker-compose.yml`). PostgreSQL data source:
 
 | Setting | Value |
