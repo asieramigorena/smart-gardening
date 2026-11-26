@@ -27,15 +27,15 @@ services:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?run scripts/fetch-secrets.sh}
     # Small-instance tuning; defaults otherwise.
-    command: [ "postgres", "-c", "shared_buffers=128MB", "-c", "max_connections=50" ]
+    command: ["postgres", "-c", "shared_buffers=128MB", "-c", "max_connections=50"]
     ports:
       # Loopback only. Other containers use postgres:5432 on the internal network.
       - "127.0.0.1:${POSTGRES_HOST_PORT:-5432}:5432"
     volumes:
       - postgres-data:/var/lib/postgresql/data
-    networks: [ backend ]
+    networks: [backend]
     healthcheck:
-      test: [ "CMD-SHELL", "pg_isready -U postgres -d smart_gardening" ]
+      test: ["CMD-SHELL", "pg_isready -U postgres -d smart_gardening"]
       interval: 10s
       timeout: 5s
       retries: 10
@@ -50,13 +50,13 @@ services:
   # migrations are skipped.
   migrate:
     image: ghcr.io/amacneil/dbmate:2.38.1
-    command: [ "--wait", "--no-dump-schema", "up" ]
+    command: ["--wait", "--no-dump-schema", "up"]
     environment:
       DATABASE_URL: postgres://postgres:${POSTGRES_PASSWORD:?}@postgres:5432/smart_gardening?sslmode=disable
       DBMATE_MIGRATIONS_DIR: /db/migrations
     volumes:
       - ../../DB/migrations:/db/migrations:ro
-    networks: [ backend ]
+    networks: [backend]
     depends_on:
       postgres:
         condition: service_healthy
@@ -71,7 +71,7 @@ services:
   # they stay in sync after a rotation. Exits when done.
   db-roles:
     image: postgres:17.12-trixie
-    entrypoint: [ "psql" ]
+    entrypoint: ["psql"]
     command:
       - --no-psqlrc
       - --quiet
@@ -85,7 +85,7 @@ services:
       PGPASSWORD: ${POSTGRES_PASSWORD:?}
     volumes:
       - ../../DB/set-role-passwords.sql:/db/set-role-passwords.sql:ro
-    networks: [ backend ]
+    networks: [backend]
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -109,16 +109,16 @@ services:
       INGEST_DLQ_URL: ${INGEST_DLQ_URL:?run scripts/fetch-secrets.sh}
       DATABASE_URL: postgresql://app:${DB_APP_PASSWORD:?}@postgres:5432/smart_gardening
       LOG_LEVEL: ${INGEST_LOG_LEVEL:-INFO}
-    networks: [ backend ]
+    networks: [backend]
     depends_on:
       db-roles:
         condition: service_completed_successfully
     # Let the current long poll (20 s) and message finish on `docker compose stop`.
     stop_grace_period: 30s
     read_only: true
-    tmpfs: [ /tmp ]
-    security_opt: [ "no-new-privileges:true" ]
-    cap_drop: [ ALL ]
+    tmpfs: [/tmp]
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: [ALL]
     deploy:
       resources:
         limits:
@@ -161,7 +161,7 @@ services:
       - grafana-data:/var/lib/grafana
       - ./grafana/provisioning:/etc/grafana/provisioning:ro
       - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
-    networks: [ backend ]
+    networks: [backend]
     depends_on:
       db-roles:
         condition: service_completed_successfully
