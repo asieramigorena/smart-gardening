@@ -146,27 +146,34 @@ services:
   # Datasource: host postgres:5432, database smart_gardening, user grafana (read-only),
   # password ${DB_GRAFANA_PASSWORD}. Admin password from SSM /smart-gardening/grafana/admin_password.
   # Port on loopback ONLY: open it from a laptop with an SSM tunnel to 3000.
-  #
-  # grafana:
-  #   image: grafana/grafana-oss:<pinned version>
-  #   restart: unless-stopped
-  #   environment:
-  #     GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?}
-  #     GF_DATABASE_TYPE: sqlite3            # Grafana's own settings stay in its volume
-  #     DB_GRAFANA_PASSWORD: ${DB_GRAFANA_PASSWORD:?}   # for the provisioned datasource
-  #   ports:
-  #     - "127.0.0.1:3000:3000"
-  #   volumes:
-  #     - grafana-data:/var/lib/grafana
-  #   networks: [backend]
-  #   depends_on:
-  #     db-roles: { condition: service_completed_successfully }
-  #   deploy: { resources: { limits: { memory: 256m } } }
-  #   logging: *logging
+  grafana:
+    image: grafana/grafana-oss:12.4.3
+    restart: unless-stopped
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?run scripts/fetch-secrets.sh}
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_DATABASE_TYPE: sqlite3 # Grafana's own settings stay in its volume
+      DB_GRAFANA_PASSWORD: ${DB_GRAFANA_PASSWORD:?run scripts/fetch-secrets.sh} # for the provisioned datasource
+    ports:
+      - "127.0.0.1:3000:3000"
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+    networks: [backend]
+    depends_on:
+      db-roles:
+        condition: service_completed_successfully
+    deploy:
+      resources:
+        limits:
+          memory: 256m
+    logging: *logging
 
 volumes:
   postgres-data:
-  # grafana-data:
+  grafana-data:
 
 networks:
   backend:

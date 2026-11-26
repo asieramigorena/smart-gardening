@@ -277,7 +277,7 @@ make decisions, fetch forecasts or send commands for it: if the service loops ov
 
 ## For Grafana
 
-Grafana runs in the same compose stack (placeholder `grafana` in
+Grafana runs in the same compose stack (service `grafana` in
 `infra/server/docker-compose.yml`). PostgreSQL data source:
 
 | Setting | Value |

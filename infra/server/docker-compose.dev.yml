@@ -1,0 +1,93 @@
+# Local development stack for Grafana (Postgres + migrations + sample data + Grafana).
+# Never used in production. Usage:
+#   docker compose -f docker-compose.dev.yml up -d
+#   docker compose -f docker-compose.dev.yml down -v   # stop and reset sample data
+#   psql "postgresql://grafana:dev-grafana-password@localhost:15432/smart_gardening"
+
+name: smart-gardening-dev
+
+services:
+  postgres:
+    image: postgres:17.12-trixie
+    environment:
+      POSTGRES_DB: smart_gardening
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: dev-postgres-password
+    ports:
+      # 15432, not 5432, so it does not clash with a PostgreSQL already running on the laptop.
+      - "127.0.0.1:15432:5432"
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U postgres -d smart_gardening" ]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  migrate:
+    image: ghcr.io/amacneil/dbmate:2.38.1
+    command: [ "--wait", "--no-dump-schema", "up" ]
+    environment:
+      DATABASE_URL: postgres://postgres:dev-postgres-password@postgres:5432/smart_gardening?sslmode=disable
+      DBMATE_MIGRATIONS_DIR: /db/migrations
+    volumes:
+      - ../../DB/migrations:/db/migrations:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  db-roles:
+    image: postgres:17.12-trixie
+    entrypoint: [ "psql" ]
+    command:
+      - --no-psqlrc
+      - --quiet
+      - --file=/db/set-role-passwords.sql
+      - --set=app_password=dev-app-password
+      - --set=grafana_password=dev-grafana-password
+    environment:
+      PGHOST: postgres
+      PGUSER: postgres
+      PGDATABASE: smart_gardening
+      PGPASSWORD: dev-postgres-password
+    volumes:
+      - ../../DB/set-role-passwords.sql:/db/set-role-passwords.sql:ro
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    restart: "no"
+
+  db-seed:
+    image: postgres:17.12-trixie
+    entrypoint: [ "psql" ]
+    command:
+      - --no-psqlrc
+      - --quiet
+      - --file=/seed/dev-seed.sql
+    environment:
+      PGHOST: postgres
+      PGUSER: postgres
+      PGDATABASE: smart_gardening
+      PGPASSWORD: dev-postgres-password
+    volumes:
+      - ./grafana/dev-seed.sql:/seed/dev-seed.sql:ro
+    depends_on:
+      db-roles:
+        condition: service_completed_successfully
+    restart: "no"
+
+  grafana:
+    image: grafana/grafana-oss:12.4.3
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_DATABASE_TYPE: sqlite3
+      DB_GRAFANA_PASSWORD: dev-grafana-password
+    ports:
+      - "127.0.0.1:3000:3000"
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+    depends_on:
+      db-seed:
+        condition: service_completed_successfully
