@@ -8,7 +8,7 @@ the same file (placeholders in `docker-compose.yml`).
 infra/server/
   docker-compose.yml
   scripts/
-    deploy.sh                 # clone/update the repo, fetch secrets, docker compose up
+    deploy.sh                 # clone/update the repo, fetch secrets, docker compose up (installs buildx if too old)
     fetch-secrets.sh          # SSM -> /opt/smart-gardening/.env (mode 600)
     backup.sh                 # pg_dump -> S3 backups bucket
     install-backup-timer.sh   # daily systemd timer for backup.sh
@@ -46,9 +46,9 @@ they say otherwise.
 sudo dnf install -y git
 sudo git clone https://github.com/asieramigorena/smart-gardening.git /opt/smart-gardening/repo
 
-# 2. Deploy a branch (main = production; dev to try changes). Installs the AWS CLI and jq if
+# 2. Deploy a branch (dev for now, see below). Installs the AWS CLI, jq and a recent buildx if
 #    missing, writes /opt/smart-gardening/.env and starts the stack.
-sudo /opt/smart-gardening/repo/infra/server/scripts/deploy.sh main
+sudo /opt/smart-gardening/repo/infra/server/scripts/deploy.sh dev
 
 # 3. Check: postgres healthy, migrate and db-roles "Exited (0)", ingest healthy after ~1 min
 cd /opt/smart-gardening/repo/infra/server
@@ -73,10 +73,20 @@ After a merge, deploy the branch again. It fast-forwards the clone, refreshes th
 SSM, applies new migrations and rebuilds/restarts what changed:
 
 ```sh
-sudo /opt/smart-gardening/repo/infra/server/scripts/deploy.sh main
+sudo /opt/smart-gardening/repo/infra/server/scripts/deploy.sh dev
 ```
 
+**Which branch:** deploy `dev` until the first release. `main` will be the production branch from
+then on, but it does not have the server code yet (and `deploy.sh` with no argument still means
+`main`, so always pass the branch).
+
 The deploy fails (and changes nothing) if someone edited files in `/opt/smart-gardening/repo`.
+
+**buildx:** `docker compose build` needs docker buildx 0.17 or later, and the Amazon Linux docker
+package ships 0.12. If the installed one is missing or older, `deploy.sh` installs the version
+pinned in `BUILDX_VERSION` (the official `buildx-<version>.linux-amd64` release binary, checked
+against the release's `checksums.txt`) to `/usr/local/lib/docker/cli-plugins/docker-buildx`.
+Later deploys find it and skip this step. To upgrade, change `BUILDX_VERSION` in the script.
 Messages that arrive while `ingest` restarts wait in the queue (4-day retention).
 
 After a password rotation in SSM (`terraform apply -replace=...`), deploy again: `db-roles`
@@ -180,7 +190,7 @@ dc stop ingest                                             # (and decision/grafa
 dc exec -T postgres pg_restore -U postgres -d smart_gardening --clean --if-exists --single-transaction \
   < /tmp/restore.dump
 rm /tmp/restore.dump
-sudo /opt/smart-gardening/repo/infra/server/scripts/deploy.sh main   # reapplies newer migrations, starts everything
+sudo /opt/smart-gardening/repo/infra/server/scripts/deploy.sh dev    # reapplies newer migrations, starts everything
 ```
 
 `--single-transaction` makes it all-or-nothing. Roles are not in the dump; they already exist

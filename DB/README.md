@@ -72,12 +72,37 @@ time), `valid_at` (hour the forecast is for), `precipitation_mm`, `precipitation
 Passwords never appear in the repo: the `db-roles` step of the compose stack sets them from SSM
 on every deploy, so rotating one in SSM and redeploying is enough.
 
-### Unknown devices
+### Unknown devices and zones
 
-A reading from a device that is not in `devices` is **not** dropped: the ingestion service
-creates the device (and its zone, if new) and logs a warning (`unknown device registered`).
+A reading from a device that is not in `devices` is **not** dropped: if its zone exists, the
+ingestion service creates the device and logs a warning (`unknown device registered`).
 An event from an unknown device creates it without a zone; its first reading sets the zone.
-Rename the zone afterwards if needed: `UPDATE zones SET name = 'Front bed' WHERE id = 'bed-2'`.
+
+Zones are **not** created automatically. A reading whose `zone` is not in `zones` (e.g. a typo
+such as `bed1` for `bed-1` in the node's `ZONE`) is invalid: it is logged (`invalid message`)
+and sent to the DLQ with the reason `unknown_zone: ...`, and nothing is written. Fix the node's
+`ZONE`, or add the zone (below) if it really is a new one. Messages in the DLQ with an `error`
+attribute are not replayed (see the DLQ section of [`infra/server/README.md`](../infra/server/README.md)).
+
+### Adding a zone
+
+Zones are created with a dbmate migration (see [Migrations](#migrations)), like the seed
+`20261120000003_seed_bed1_pi01.sql` (`bed-1`, the real bed) or
+`20261126110000_add_e2e_test_zone.sql` (`e2e-test`, test-only, no valve: see the Grafana and
+decision service sections):
+
+```sql
+-- migrate:up
+INSERT INTO zones (id, name) VALUES ('bed-2', 'Bed 2') ON CONFLICT DO NOTHING;
+
+-- migrate:down
+DELETE FROM zones WHERE id = 'bed-2';
+```
+
+The `id` must follow the contract's zone format (`^[a-z0-9][a-z0-9_-]{0,31}$`) and match the
+node's `ZONE`. The next deploy applies it before the ingestion service starts. Create the zone
+before provisioning a node for it; otherwise its readings go to the DLQ until it exists.
+To rename a zone, use a migration too: `UPDATE zones SET name = 'Front bed' WHERE id = 'bed-2'`.
 
 ## Migrations
 
@@ -162,8 +187,9 @@ and writes `readings` and `irrigation_events`. For each message:
    invalid.
 2. Valid: `INSERT ... ON CONFLICT DO NOTHING` in one transaction → commit → delete from the queue.
    Duplicates are deleted too.
-3. Invalid: logged with the reason, copied to the DLQ with a message attribute `error` (the
-   reason), then deleted from the queue.
+3. Invalid (fails the contract, or a reading for a zone that is not in `zones`): logged with the
+   reason, copied to the DLQ with a message attribute `error` (the reason, e.g.
+   `unknown_zone: 'bed1' ...`), then deleted from the queue.
 4. Database error: **not** deleted. SQS redelivers it after 60 s and moves it to the DLQ after 5
    attempts. If the database is down, the service stops receiving and retries with backoff
    (1 s → 60 s).
@@ -244,6 +270,11 @@ A "do not irrigate" decision is the same `INSERT` with `irrigate = false`, no `d
 and no `command_id`. The device answers on `/events`, which ends up in `irrigation_events`:
 join on `command_id` to know whether a command was executed or rejected.
 
+**Skip the `e2e-test` zone.** It only holds the test readings of the end-to-end check
+([`tools/e2e_check`](../tools/e2e_check/README.md), device `e2e-check`) and has no valve. Never
+make decisions, fetch forecasts or send commands for it: if the service loops over `zones`, use
+`SELECT id FROM zones WHERE id <> 'e2e-test'`.
+
 ## For Grafana
 
 Grafana runs in the same compose stack (service `grafana` in
@@ -268,7 +299,7 @@ Useful queries (Grafana macros: `$__timeFilter`, `$__timeGroupAlias`):
 -- Soil moisture and air temperature per zone over time (time series)
 SELECT $__timeGroupAlias(ts, 5m), zone_id AS metric, avg(soil_moisture_raw) AS soil_moisture_raw
 FROM readings
-WHERE $__timeFilter(ts)
+WHERE $__timeFilter(ts) AND zone_id <> 'e2e-test'
 GROUP BY 1, 2
 ORDER BY 1;
 
@@ -276,6 +307,7 @@ ORDER BY 1;
 SELECT DISTINCT ON (device_id)
   device_id, zone_id, ts, now() - ts AS age, soil_moisture_raw, soil_moisture, air_temp, air_humidity, light
 FROM readings
+WHERE zone_id <> 'e2e-test'
 ORDER BY device_id, ts DESC;
 
 -- Decisions (table or annotations)
@@ -293,6 +325,12 @@ ORDER BY e.ts DESC;
 ```
 
 Sensor columns are NULL when a sensor failed: Grafana shows gaps, which is what we want.
+
+**Exclude the `e2e-test` zone from every panel** (`zone_id <> 'e2e-test'`, as in the queries
+above). It is a test-only zone without a valve: the end-to-end check
+([`tools/e2e_check`](../tools/e2e_check/README.md)) publishes a reading there as device
+`e2e-check` on every run. A zone dashboard variable should come from
+`SELECT id FROM zones WHERE id <> 'e2e-test'`.
 
 Open Grafana from your laptop (its port is published only on the server's loopback):
 

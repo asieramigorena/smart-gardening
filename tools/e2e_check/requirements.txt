@@ -1,0 +1,6 @@
+# Pinned dependencies of the end-to-end check (same versions as DB/ingest/requirements.txt).
+boto3==1.44.6
+psycopg[binary]==3.3.9
+jsonschema==4.26.0
+# Enables the "date-time" format check of the contract schemas.
+rfc3339-validator==0.1.4

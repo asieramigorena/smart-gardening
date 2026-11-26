@@ -182,7 +182,7 @@ stack (PostgreSQL, migrations, ingestion...) lives in `/opt/smart-gardening/repo
 is deployed with one script; see [`server/README.md`](server/README.md):
 
 ```sh
-sudo /opt/smart-gardening/repo/infra/server/scripts/deploy.sh main
+sudo /opt/smart-gardening/repo/infra/server/scripts/deploy.sh dev   # main only after the first release
 ```
 
 Type `exit` to close the session.
@@ -253,15 +253,19 @@ aws ssm get-parameter --name /smart-gardening/iot/endpoint --query Parameter.Val
 ```
 
 Copy the three files to the Pi over the local network and lock them down, then delete the local
-copies:
+copies. They are owned by the Pi user (`<user>`), because the node service runs as that user and
+must read the private key:
 
 ```sh
 scp pi-01.cert.pem pi-01.private.key AmazonRootCA1.pem <user>@<pi>:/tmp/
-ssh <user>@<pi> 'sudo install -d -m 700 /etc/smart-gardening/certs &&
-  sudo install -m 600 /tmp/pi-01.* /tmp/AmazonRootCA1.pem /etc/smart-gardening/certs/ &&
+ssh <user>@<pi> 'sudo install -d -o <user> -g <user> -m 700 /etc/smart-gardening /etc/smart-gardening/certs &&
+  sudo install -o <user> -g <user> -m 600 /tmp/pi-01.* /tmp/AmazonRootCA1.pem /etc/smart-gardening/certs/ &&
   rm /tmp/pi-01.* /tmp/AmazonRootCA1.pem'
 rm pi-01.cert.pem pi-01.private.key AmazonRootCA1.pem
 ```
+
+`node/provision.sh <ssh-host> pi-01 <zone>` does all of the above in one go and also writes the
+node config (`/etc/smart-gardening/node.env`: endpoint, thing name and zone); see `node/`.
 
 The device connects to the endpoint on port 8883 (MQTT over TLS) with **client ID = its thing
 name** (`pi-01`); any other client ID is refused. Never commit these files: `*.pem` and `*.key`
