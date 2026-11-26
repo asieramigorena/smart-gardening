@@ -11,7 +11,7 @@ than the automatic `GITHUB_TOKEN`, which is read-only.
 | `.github/workflows/security.yml` | `Security / gitleaks` | Always | Scans the new commits for secrets (API keys, tokens, passwords) with gitleaks. |
 | `.github/workflows/python.yml` | `Python / lint` | `node/`, `ML/`, `DB/`, `tools/` or `docs/contracts/` changed | `ruff check` with real-error rules only (syntax errors, undefined names, unused imports). No style rules. |
 | `.github/workflows/python.yml` | `Python / contracts` | `docs/contracts/` changed | Runs `docs/contracts/test_contracts.py` (unittest + jsonschema): the message schemas are valid draft 2020-12, valid examples pass and invalid ones fail. |
-| `.github/workflows/python.yml` | `Python / ingest` | `DB/`, `tools/` or `docs/contracts/` changed | Unit tests (unittest) of the ingestion service (`DB/ingest/tests`, SQS and PostgreSQL mocked) and of the simulator (`tools/simulator`). |
+| `.github/workflows/python.yml` | `Python / ingest` | `DB/`, `tools/` or `docs/contracts/` changed | Unit tests (unittest) of the ingestion service (`DB/ingest/tests`, SQS and PostgreSQL mocked), of the simulator (`tools/simulator`) and of the end-to-end check (`tools/e2e_check`, AWS and PostgreSQL mocked). |
 | `.github/workflows/python.yml` | `Python / node` | `node/` or `docs/contracts/` changed | Unit tests (unittest) of the Raspberry Pi node (`node/tests`): config, readings message against the contract, sensor failures and DHT11 decoding. No hardware and no network needed. |
 | `.github/workflows/infra.yml` | `Infra / terraform` | `infra/` changed | `terraform fmt -check`, then `terraform init -backend=false`, `terraform validate` and `tflint` in each root module (`infra/bootstrap`, `infra/main`). |
 
@@ -60,6 +60,7 @@ break CI without a code change:
 | Python | 3.11 (Raspberry Pi OS Bookworm) | `python.yml` |
 | jsonschema | 4.26.0 (+ rfc3339-validator 0.1.4) | `docs/contracts/requirements.txt` |
 | Ingestion dependencies (boto3, psycopg, jsonschema) | see file | `DB/ingest/requirements.txt` |
+| End-to-end check dependencies (same versions as the ingestion service) | see file | `tools/e2e_check/requirements.txt` |
 | Node dependencies (installed with `--no-deps`, as on the Pi) | see file | `node/requirements.txt` |
 | Terraform | 1.17.2 | `infra/mise.toml` |
 | TFLint | 0.66.0 (+ AWS ruleset 0.50.0) | `infra/mise.toml` (ruleset: `infra/.tflint.hcl`) |
@@ -88,10 +89,11 @@ pipx run --spec ruff==0.17.5 ruff check node ML DB tools docs/contracts --select
 pip install -r docs/contracts/requirements.txt
 python -m unittest discover -s docs/contracts -p "test_*.py"
 
-# Ingestion service and simulator tests (in a virtualenv)
-pip install -r DB/ingest/requirements.txt
+# Ingestion service, simulator and end-to-end check tests (in a virtualenv)
+pip install -r DB/ingest/requirements.txt -r tools/e2e_check/requirements.txt
 python -m unittest discover -s DB/ingest/tests -t DB/ingest
 python -m unittest discover -s tools/simulator
+python -m unittest discover -s tools/e2e_check
 
 # Node tests (in a virtualenv; --no-deps as on the Pi, see node/setup.sh)
 pip install --no-deps -r node/requirements.txt
