@@ -147,7 +147,7 @@ services:
   # password ${DB_GRAFANA_PASSWORD}. Admin password from SSM /smart-gardening/grafana/admin_password.
   # Port on loopback ONLY: open it from a laptop with an SSM tunnel to 3000.
   grafana:
-    image: grafana/grafana-oss:11.5.2
+    image: grafana/grafana-oss:12.4.3
     restart: unless-stopped
     environment:
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?run scripts/fetch-secrets.sh}
