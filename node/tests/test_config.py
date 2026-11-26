@@ -71,6 +71,22 @@ class LoadConfigTest(unittest.TestCase):
                 with self.assertRaises(ConfigError):
                     load_config(self.dir, environ={})
 
+    def test_adc_address_defaults_to_0x08(self):
+        self._write(ENV)
+        self.assertEqual(load_config(self.dir, environ={}).adc_address, 0x08)
+
+    def test_adc_address_accepts_hex_decimal_and_env_override(self):
+        self._write(ENV + "GROVE_ADC_ADDRESS=0x04\n")
+        self.assertEqual(load_config(self.dir, environ={}).adc_address, 0x04)
+        self.assertEqual(load_config(self.dir, environ={"GROVE_ADC_ADDRESS": "4"}).adc_address, 4)
+
+    def test_adc_address_invalid_or_out_of_range_is_rejected(self):
+        for bad in ("0x00", "0x02", "0x78", "0x80", "bad"):
+            with self.subTest(adc_address=bad):
+                self._write(ENV + f"GROVE_ADC_ADDRESS={bad}\n")
+                with self.assertRaises(ConfigError):
+                    load_config(self.dir, environ={})
+
 
 if __name__ == "__main__":
     unittest.main()

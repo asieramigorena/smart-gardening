@@ -11,9 +11,12 @@ from dotenv import dotenv_values
 DEFAULT_CONFIG_DIR = "/etc/smart-gardening"
 DEFAULT_READ_INTERVAL_S = 300
 MIN_READ_INTERVAL_S = 10
+DEFAULT_ADC_ADDRESS = 0x08
+MIN_ADC_ADDRESS = 0x03
+MAX_ADC_ADDRESS = 0x77
 REQUIRED = ("IOT_ENDPOINT", "THING_NAME", "ZONE")
 OPTIONAL_PATHS = ("IOT_CERT", "IOT_KEY", "IOT_ROOT_CA")
-OPTIONAL_SETTINGS = ("READ_INTERVAL_S",)
+OPTIONAL_SETTINGS = ("READ_INTERVAL_S", "GROVE_ADC_ADDRESS")
 # Patterns of docs/contracts/README.md ("Common fields")
 _PATTERNS = {
     "THING_NAME": re.compile(r"[A-Za-z0-9_-]{1,64}"),  # device_id
@@ -34,6 +37,7 @@ class NodeConfig:
     key: Path
     root_ca: Path
     read_interval_s: int = DEFAULT_READ_INTERVAL_S
+    adc_address: int = DEFAULT_ADC_ADDRESS
 
     @property
     def topic(self):
@@ -50,6 +54,20 @@ def _parse_read_interval(raw):
         raise ConfigError(f"READ_INTERVAL_S={raw!r} must be an integer") from exc
     if value < MIN_READ_INTERVAL_S:
         raise ConfigError(f"READ_INTERVAL_S={value} must be at least {MIN_READ_INTERVAL_S}")
+    return value
+
+
+def _parse_adc_address(raw):
+    if not raw:
+        return DEFAULT_ADC_ADDRESS
+    try:
+        value = int(raw, 0)
+    except ValueError as exc:
+        raise ConfigError(f"GROVE_ADC_ADDRESS={raw!r} must be an integer (e.g. 0x08)") from exc
+    if not (MIN_ADC_ADDRESS <= value <= MAX_ADC_ADDRESS):
+        raise ConfigError(
+            f"GROVE_ADC_ADDRESS={hex(value)} must be between {hex(MIN_ADC_ADDRESS)} and {hex(MAX_ADC_ADDRESS)}"
+        )
     return value
 
 
@@ -79,6 +97,7 @@ def load_config(directory=None, environ=None):
             raise ConfigError(f"{key}={values[key]!r} does not match {pattern.pattern} (docs/contracts)")
 
     read_interval_s = _parse_read_interval(values.get("READ_INTERVAL_S"))
+    adc_address = _parse_adc_address(values.get("GROVE_ADC_ADDRESS"))
 
     thing = values["THING_NAME"]
     defaults = {
@@ -95,4 +114,5 @@ def load_config(directory=None, environ=None):
         key=paths["IOT_KEY"],
         root_ca=paths["IOT_ROOT_CA"],
         read_interval_s=read_interval_s,
+        adc_address=adc_address,
     )
