@@ -87,6 +87,36 @@ class LoadConfigTest(unittest.TestCase):
                 with self.assertRaises(ConfigError):
                     load_config(self.dir, environ={})
 
+    def test_soil_calibration_defaults_to_none(self):
+        self._write(ENV)
+        cfg = load_config(self.dir, environ={})
+        self.assertIsNone(cfg.soil_raw_dry)
+        self.assertIsNone(cfg.soil_raw_wet)
+
+    def test_soil_calibration_accepts_increasing_and_decreasing_pairs(self):
+        self._write(ENV + "SOIL_RAW_DRY=0\nSOIL_RAW_WET=2800\n")
+        cfg = load_config(self.dir, environ={})
+        self.assertEqual((cfg.soil_raw_dry, cfg.soil_raw_wet), (0, 2800))
+        cfg_env = load_config(
+            self.dir, environ={"SOIL_RAW_DRY": "3200", "SOIL_RAW_WET": "1200"}
+        )
+        self.assertEqual((cfg_env.soil_raw_dry, cfg_env.soil_raw_wet), (3200, 1200))
+
+    def test_soil_calibration_rejects_partial_equal_or_invalid_values(self):
+        cases = (
+            "SOIL_RAW_DRY=100\n",
+            "SOIL_RAW_WET=2000\n",
+            "SOIL_RAW_DRY=1500\nSOIL_RAW_WET=1500\n",
+            "SOIL_RAW_DRY=-1\nSOIL_RAW_WET=2000\n",
+            "SOIL_RAW_DRY=100\nSOIL_RAW_WET=4096\n",
+            "SOIL_RAW_DRY=abc\nSOIL_RAW_WET=2000\n",
+        )
+        for extra in cases:
+            with self.subTest(extra=extra.strip()):
+                self._write(ENV + extra)
+                with self.assertRaises(ConfigError):
+                    load_config(self.dir, environ={})
+
 
 if __name__ == "__main__":
     unittest.main()

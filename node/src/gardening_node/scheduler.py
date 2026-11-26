@@ -16,17 +16,29 @@ EX_CONFIG = 78
 JITTER_S = 60  # spread the nodes over a minute instead of all connecting at :00
 
 
-def take_reading(device_id, zone, adc_address=sensors.DEFAULT_ADC_ADDRESS):
+def take_reading(
+    device_id,
+    zone,
+    adc_address=sensors.DEFAULT_ADC_ADDRESS,
+    soil_raw_dry=None,
+    soil_raw_wet=None,
+):
     errors = {}
     values = sensors.read_all(errors, adc_address=adc_address)
     for fields, error in errors.items():
         print(f"sensor {fields} failed: {error}", file=sys.stderr)
-    return contract.build_reading(device_id, zone, datetime.now(timezone.utc), values)
+    return contract.build_reading(
+        device_id, zone, datetime.now(timezone.utc), values,
+        soil_raw_dry=soil_raw_dry, soil_raw_wet=soil_raw_wet,
+    )
 
 
 def publish_reading(publisher, validator):
     cfg = publisher.cfg
-    body = take_reading(cfg.thing_name, cfg.zone, adc_address=cfg.adc_address)
+    body = take_reading(
+        cfg.thing_name, cfg.zone, adc_address=cfg.adc_address,
+        soil_raw_dry=cfg.soil_raw_dry, soil_raw_wet=cfg.soil_raw_wet,
+    )
     try:
         payload = contract.encode(body, validator)
     except contract.ContractError as exc:  # rule 7: never send a message that breaks the contract
@@ -57,7 +69,12 @@ def main():
     if args.dry_run:
         device_id, zone = (cfg.thing_name, cfg.zone) if cfg else (socket.gethostname(), "unprovisioned")
         adc_address = cfg.adc_address if cfg else sensors.DEFAULT_ADC_ADDRESS
-        body = take_reading(device_id, zone, adc_address=adc_address)
+        soil_raw_dry = cfg.soil_raw_dry if cfg else None
+        soil_raw_wet = cfg.soil_raw_wet if cfg else None
+        body = take_reading(
+            device_id, zone, adc_address=adc_address,
+            soil_raw_dry=soil_raw_dry, soil_raw_wet=soil_raw_wet,
+        )
         print(f"topic: {cfg.topic if cfg else '(node not provisioned)'}")
         try:
             print(contract.encode(body, validator).decode())

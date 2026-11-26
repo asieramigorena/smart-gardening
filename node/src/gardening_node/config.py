@@ -14,9 +14,11 @@ MIN_READ_INTERVAL_S = 10
 DEFAULT_ADC_ADDRESS = 0x08
 MIN_ADC_ADDRESS = 0x03
 MAX_ADC_ADDRESS = 0x77
+MIN_SOIL_RAW = 0
+MAX_SOIL_RAW = 4095
 REQUIRED = ("IOT_ENDPOINT", "THING_NAME", "ZONE")
 OPTIONAL_PATHS = ("IOT_CERT", "IOT_KEY", "IOT_ROOT_CA")
-OPTIONAL_SETTINGS = ("READ_INTERVAL_S", "GROVE_ADC_ADDRESS")
+OPTIONAL_SETTINGS = ("READ_INTERVAL_S", "GROVE_ADC_ADDRESS", "SOIL_RAW_DRY", "SOIL_RAW_WET")
 # Patterns of docs/contracts/README.md ("Common fields")
 _PATTERNS = {
     "THING_NAME": re.compile(r"[A-Za-z0-9_-]{1,64}"),  # device_id
@@ -38,6 +40,8 @@ class NodeConfig:
     root_ca: Path
     read_interval_s: int = DEFAULT_READ_INTERVAL_S
     adc_address: int = DEFAULT_ADC_ADDRESS
+    soil_raw_dry: int | None = None
+    soil_raw_wet: int | None = None
 
     @property
     def topic(self):
@@ -71,6 +75,26 @@ def _parse_adc_address(raw):
     return value
 
 
+def _parse_soil_calibration(raw_dry, raw_wet):
+    if not raw_dry and not raw_wet:
+        return None, None
+    if not raw_dry or not raw_wet:
+        raise ConfigError("SOIL_RAW_DRY and SOIL_RAW_WET must both be set")
+    parsed = {}
+    for name, raw in (("SOIL_RAW_DRY", raw_dry), ("SOIL_RAW_WET", raw_wet)):
+        try:
+            value = int(raw)
+        except ValueError as exc:
+            raise ConfigError(f"{name}={raw!r} must be an integer") from exc
+        if not (MIN_SOIL_RAW <= value <= MAX_SOIL_RAW):
+            raise ConfigError(f"{name}={value} must be between {MIN_SOIL_RAW} and {MAX_SOIL_RAW}")
+        parsed[name] = value
+    dry, wet = parsed["SOIL_RAW_DRY"], parsed["SOIL_RAW_WET"]
+    if dry == wet:
+        raise ConfigError("SOIL_RAW_DRY and SOIL_RAW_WET must differ")
+    return dry, wet
+
+
 def config_dir():
     return Path(os.environ.get("SMART_GARDENING_CONFIG_DIR", DEFAULT_CONFIG_DIR)).expanduser()
 
@@ -98,6 +122,9 @@ def load_config(directory=None, environ=None):
 
     read_interval_s = _parse_read_interval(values.get("READ_INTERVAL_S"))
     adc_address = _parse_adc_address(values.get("GROVE_ADC_ADDRESS"))
+    soil_raw_dry, soil_raw_wet = _parse_soil_calibration(
+        values.get("SOIL_RAW_DRY"), values.get("SOIL_RAW_WET")
+    )
 
     thing = values["THING_NAME"]
     defaults = {
@@ -115,4 +142,6 @@ def load_config(directory=None, environ=None):
         root_ca=paths["IOT_ROOT_CA"],
         read_interval_s=read_interval_s,
         adc_address=adc_address,
+        soil_raw_dry=soil_raw_dry,
+        soil_raw_wet=soil_raw_wet,
     )

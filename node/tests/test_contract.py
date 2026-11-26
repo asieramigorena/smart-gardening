@@ -56,6 +56,33 @@ class ReadingMessageTest(unittest.TestCase):
             with self.assertRaises(contract.ContractError):
                 contract.readings_validator(empty)
 
+    def test_soil_calibration_is_omitted_when_uncalibrated_or_raw_is_none(self):
+        uncalibrated = contract.build_reading("pi-01", "bed-1", TAKEN_AT, {"soil_moisture_raw": 1500})
+        self.assertNotIn("soil_moisture", uncalibrated)
+        contract.encode(uncalibrated, VALIDATOR)
+
+        failed = contract.build_reading(
+            "pi-01", "bed-1", TAKEN_AT, {"soil_moisture_raw": None},
+            soil_raw_dry=0, soil_raw_wet=2500,
+        )
+        self.assertNotIn("soil_moisture", failed)
+        contract.encode(failed, VALIDATOR)
+
+    def test_soil_calibration_interpolates_and_clamps_for_both_polarities(self):
+        # Increasing raw when wet (e.g. Grove moisture sensor)
+        body = contract.build_reading(
+            "pi-01", "bed-1", TAKEN_AT, {"soil_moisture_raw": 1250},
+            soil_raw_dry=0, soil_raw_wet=2500,
+        )
+        self.assertEqual(body["soil_moisture"], 50.0)
+        contract.encode(body, VALIDATOR)
+
+        # Decreasing raw when wet (capacitive sensors)
+        self.assertEqual(contract.calibrate_soil_moisture(2000, 3000, 1000), 50.0)
+        self.assertEqual(contract.calibrate_soil_moisture(3500, 3000, 1000), 0.0)
+        self.assertEqual(contract.calibrate_soil_moisture(500, 3000, 1000), 100.0)
+        self.assertEqual(contract.calibrate_soil_moisture(1333, 1000, 2000), 33.3)
+
 
 if __name__ == "__main__":
     unittest.main()
