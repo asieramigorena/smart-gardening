@@ -1,11 +1,17 @@
-"""Scheduler clock checks and publishing guards."""
+"""Scheduler clock checks, dry-run, and publishing guards."""
+import contextlib
+import io
+import json
+import os
 import subprocess
+import sys
+import tempfile
 import unittest
 from datetime import datetime, timezone
 from types import SimpleNamespace
 from unittest import mock
 
-from gardening_node import contract, scheduler
+from gardening_node import contract, scheduler, sensors
 
 
 class ClockCheckTest(unittest.TestCase):
@@ -45,6 +51,25 @@ class ClockCheckTest(unittest.TestCase):
         with mock.patch.object(scheduler, "check_clock", return_value=False):
             self.assertFalse(scheduler.publish_reading(publisher, validator))
         publisher.send.assert_not_called()
+
+
+class DryRunTest(unittest.TestCase):
+    def test_dry_run_without_config_uses_unprovisioned_device_id(self):
+        sample = {"soil_moisture_raw": 1200, "light": 50.0, "air_temp": 20.0, "air_humidity": 55.0}
+        stdout = io.StringIO()
+        with tempfile.TemporaryDirectory() as tmp:
+            with (
+                mock.patch.dict(os.environ, {"SMART_GARDENING_CONFIG_DIR": tmp}, clear=True),
+                mock.patch.object(sys, "argv", ["scheduler", "--dry-run"]),
+                mock.patch.object(sensors, "read_all", return_value=sample),
+                contextlib.redirect_stdout(stdout),
+            ):
+                rc = scheduler.main()
+        self.assertEqual(rc, 0)
+        lines = stdout.getvalue().splitlines()
+        payload = json.loads(lines[1])
+        self.assertEqual(payload["device_id"], "unprovisioned")
+        self.assertEqual(payload["zone"], "unprovisioned")
 
 
 if __name__ == "__main__":

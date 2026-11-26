@@ -2,7 +2,6 @@
 import argparse
 import logging
 import signal
-import socket
 import subprocess
 import sys
 from datetime import datetime, timezone
@@ -98,7 +97,7 @@ def main():
         cfg = None
 
     if args.dry_run:
-        device_id, zone = (cfg.thing_name, cfg.zone) if cfg else (socket.gethostname(), "unprovisioned")
+        device_id, zone = (cfg.thing_name, cfg.zone) if cfg else ("unprovisioned", "unprovisioned")
         adc_address = cfg.adc_address if cfg else sensors.DEFAULT_ADC_ADDRESS
         soil_raw_dry = cfg.soil_raw_dry if cfg else None
         soil_raw_wet = cfg.soil_raw_wet if cfg else None
