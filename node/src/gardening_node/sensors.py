@@ -1,7 +1,7 @@
 """Grove sensor readings for the node (Raspberry Pi 5 + Grove Base Hat).
 
 This is the only module that knows the wiring. The rest of the code (checks,
-MQTT publishing) just calls read_all(), as in the Lab 5 sensors.py.
+MQTT publishing) just calls read_all().
 
 Wiring:
     Soil moisture            A0   analog
@@ -9,16 +9,23 @@ Wiring:
     Temperature / humidity   D5   digital (BCM 5), DHT11
     LED (actuator)           D16  digital (BCM 16): irrigation indicator (not used yet)
 """
-import os
-
 MOISTURE_CHANNEL = 0
 LIGHT_CHANNEL = 2
 LED_PIN = 16
 DHT_PIN = 5  # DHT11, the same sensor on every node
 # Newer hats (MM32 chip) answer on 0x08; older ones (STM32) on 0x04.
-ADC_ADDRESS = int(os.environ.get("GROVE_ADC_ADDRESS", "0x08"), 0)
+DEFAULT_ADC_ADDRESS = 0x08
 
 _adc = None
+_adc_address = DEFAULT_ADC_ADDRESS
+
+
+def configure(adc_address=DEFAULT_ADC_ADDRESS):
+    """Select the I2C address of the Grove hat ADC (resets cached handle if changed)."""
+    global _adc, _adc_address
+    if adc_address != _adc_address:
+        _adc_address = adc_address
+        _adc = None
 
 
 def _get_adc():
@@ -27,7 +34,7 @@ def _get_adc():
         # Imported here (like GroveLed below) so the module loads without the hat
         from grove.adc import ADC
 
-        _adc = ADC(address=ADC_ADDRESS)
+        _adc = ADC(address=_adc_address)
     return _adc
 
 
@@ -65,13 +72,15 @@ READERS = {
 }
 
 
-def read_all(errors=None):
-    """One reading: a FLAT dict of numbers (no strings, no nesting), as in Lab 5.
+def read_all(errors=None, adc_address=None):
+    """One reading: a FLAT dict of numbers (no strings, no nesting).
 
     A sensor that fails gives None in its fields instead of losing the whole
     reading. If `errors` is a dict, the failures are added to it as
     {"field[,field]": "Error: message"}.
     """
+    if adc_address is not None:
+        configure(adc_address)
     reading = {}
     for fields, read in READERS.items():
         try:

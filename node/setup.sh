@@ -45,18 +45,17 @@ echo "4/5  Python dependencies and the node package (editable, from src/)"
 "$VENV/bin/pip" install --quiet --no-deps -r requirements.txt
 "$VENV/bin/pip" install --quiet --no-deps -e .
 
-echo "5/5  Node service (hourly readings with APScheduler)"
+echo "5/5  Node service (periodic readings with APScheduler)"
 CONFIG_DIR="${SMART_GARDENING_CONFIG_DIR:-/etc/smart-gardening}"
 UNIT=smart-gardening-node
 if [ ! -f "$CONFIG_DIR/node.env" ]; then
     echo "     node not provisioned yet: run provision.sh from an operator machine, then ./setup.sh again"
 else
-    # Same unit as the Lab 5 publisher (lab5-publisher.service), filled in for this node.
     # Exit code 78 = config error: restarting would not fix it, so systemd does not retry.
     SERVICE="[Unit]
-Description=Smart gardening node: hourly sensor readings to AWS IoT Core
-After=network-online.target
-Wants=network-online.target
+Description=Smart gardening node: periodic sensor readings to AWS IoT Core
+After=network-online.target time-sync.target
+Wants=network-online.target time-sync.target
 
 [Service]
 User=$(id -un)

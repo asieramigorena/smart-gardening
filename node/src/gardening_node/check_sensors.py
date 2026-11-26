@@ -19,13 +19,19 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("-n", "--samples", type=int, default=5)
     parser.add_argument("-i", "--interval", type=float, default=1.0)
+    parser.add_argument(
+        "--adc-address",
+        type=lambda s: int(s, 0),
+        default=sensors.DEFAULT_ADC_ADDRESS,
+        help="I2C address of the Grove hat ADC (default: 0x08)",
+    )
     parser.add_argument("--led", action="store_true", help="blink the LED")
     args = parser.parse_args()
 
     readings = []
     errors = {}
     for i in range(args.samples):
-        readings.append(sensors.read_all(errors))
+        readings.append(sensors.read_all(errors, adc_address=args.adc_address))
         if i < args.samples - 1:
             time.sleep(args.interval)
 

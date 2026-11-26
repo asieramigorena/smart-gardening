@@ -32,16 +32,30 @@ def utc_timestamp(moment):
     return moment.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
-def build_reading(device_id, zone, taken_at, sensor_values):
+def calibrate_soil_moisture(raw, dry, wet):
+    """Interpolate raw ADC reading to a 0-100% moisture value (works for either polarity)."""
+    if raw is None or dry is None or wet is None:
+        return None
+    pct = (raw - dry) / (wet - dry) * 100.0
+    return round(max(0.0, min(100.0, pct)), 1)
+
+
+def build_reading(device_id, zone, taken_at, sensor_values, soil_raw_dry=None, soil_raw_wet=None):
     """Readings body. `taken_at` is a timezone-aware datetime; `sensor_values`
     comes from sensors.read_all()."""
-    return {
+    body = {
         "schema_version": SCHEMA_VERSION,
         "device_id": device_id,
         "zone": zone,
         "ts": utc_timestamp(taken_at),
         **sensor_values,
     }
+    soil_moisture = calibrate_soil_moisture(
+        sensor_values.get("soil_moisture_raw"), soil_raw_dry, soil_raw_wet
+    )
+    if soil_moisture is not None:
+        body["soil_moisture"] = soil_moisture
+    return body
 
 
 def encode(body, validator):
