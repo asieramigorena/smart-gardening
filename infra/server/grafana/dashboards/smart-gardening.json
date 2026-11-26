@@ -18,12 +18,13 @@
             {
                 "name": "zone",
                 "label": "Zone",
+                "description": "The e2e-test zone (test readings of tools/e2e_check) is never listed.",
                 "type": "query",
                 "datasource": {
                     "type": "postgres",
                     "uid": "smart-gardening-pg"
                 },
-                "query": "SELECT id FROM zones ORDER BY id;",
+                "query": "SELECT id FROM zones WHERE id <> 'e2e-test' ORDER BY id;",
                 "refresh": 1,
                 "multi": true,
                 "includeAll": true,
@@ -35,18 +36,31 @@
             {
                 "name": "device",
                 "label": "Device",
+                "description": "Devices of the selected zones. Devices of the e2e-test zone are never listed.",
                 "type": "query",
                 "datasource": {
                     "type": "postgres",
                     "uid": "smart-gardening-pg"
                 },
-                "query": "SELECT id FROM devices WHERE zone_id IN ($zone) ORDER BY id;",
+                "query": "SELECT id FROM devices WHERE zone_id IN ($zone) AND zone_id <> 'e2e-test' ORDER BY id;",
                 "refresh": 1,
                 "multi": true,
                 "includeAll": true,
                 "current": {
                     "text": "All",
                     "value": "$__all"
+                }
+            },
+            {
+                "name": "baseline_liters",
+                "label": "Baseline (L per irrigation)",
+                "description": "Liters a fixed schedule would have used per irrigation cycle. Used by the water savings panel to estimate the water saved by each rain-skipped decision. Placeholder until a baseline is stored in the database; change it in Dashboard settings -> Variables.",
+                "type": "constant",
+                "query": "4.5",
+                "hide": 2,
+                "current": {
+                    "text": "4.5",
+                    "value": "4.5"
                 }
             }
         ]
@@ -55,8 +69,8 @@
         {
             "id": 1,
             "type": "timeseries",
-            "title": "Soil moisture by zone",
-            "description": "Uses calibrated soil_moisture (%) when available, falling back to soil_moisture_raw.",
+            "title": "Soil moisture (%)",
+            "description": "Calibrated soil_moisture (%) per zone, 5 min averages. Zones whose sensors are not calibrated have no data here: see the raw (ADC) panel.",
             "gridPos": {
                 "h": 8,
                 "w": 12,
@@ -67,19 +81,28 @@
                 "type": "postgres",
                 "uid": "smart-gardening-pg"
             },
+            "fieldConfig": {
+                "defaults": {
+                    "unit": "percent",
+                    "min": 0,
+                    "max": 100
+                },
+                "overrides": []
+            },
             "targets": [
                 {
                     "refId": "A",
                     "format": "time_series",
                     "rawQuery": true,
-                    "rawSql": "SELECT $__timeGroupAlias(ts, 5m), zone_id AS metric, avg(COALESCE(soil_moisture, soil_moisture_raw)) AS value FROM readings WHERE $__timeFilter(ts) AND zone_id IN ($zone) AND device_id IN ($device) GROUP BY 1, 2 ORDER BY 1;"
+                    "rawSql": "SELECT $__timeGroupAlias(ts, 5m), zone_id AS metric, avg(soil_moisture) AS value FROM readings WHERE $__timeFilter(ts) AND zone_id IN ($zone) AND zone_id <> 'e2e-test' AND device_id IN ($device) GROUP BY 1, 2 ORDER BY 1;"
                 }
             ]
         },
         {
-            "id": 2,
+            "id": 8,
             "type": "timeseries",
-            "title": "Air temperature, humidity & light",
+            "title": "Soil moisture raw (ADC)",
+            "description": "Raw soil_moisture_raw ADC value (0-4095) per zone, 5 min averages. Not comparable between sensors until they are calibrated.",
             "gridPos": {
                 "h": 8,
                 "w": 12,
@@ -90,12 +113,44 @@
                 "type": "postgres",
                 "uid": "smart-gardening-pg"
             },
+            "fieldConfig": {
+                "defaults": {
+                    "unit": "none",
+                    "decimals": 0,
+                    "min": 0,
+                    "max": 4095
+                },
+                "overrides": []
+            },
             "targets": [
                 {
                     "refId": "A",
                     "format": "time_series",
                     "rawQuery": true,
-                    "rawSql": "SELECT $__timeGroupAlias(ts, 5m), avg(air_temp) AS \"Air Temp (°C)\", avg(air_humidity) AS \"Air Humidity (%)\", avg(light) AS \"Light (%)\" FROM readings WHERE $__timeFilter(ts) AND zone_id IN ($zone) AND device_id IN ($device) GROUP BY 1 ORDER BY 1;"
+                    "rawSql": "SELECT $__timeGroupAlias(ts, 5m), zone_id AS metric, avg(soil_moisture_raw) AS value FROM readings WHERE $__timeFilter(ts) AND zone_id IN ($zone) AND zone_id <> 'e2e-test' AND device_id IN ($device) GROUP BY 1, 2 ORDER BY 1;"
+                }
+            ]
+        },
+        {
+            "id": 2,
+            "type": "timeseries",
+            "title": "Air temperature, humidity & light",
+            "gridPos": {
+                "h": 8,
+                "w": 12,
+                "x": 0,
+                "y": 8
+            },
+            "datasource": {
+                "type": "postgres",
+                "uid": "smart-gardening-pg"
+            },
+            "targets": [
+                {
+                    "refId": "A",
+                    "format": "time_series",
+                    "rawQuery": true,
+                    "rawSql": "SELECT $__timeGroupAlias(ts, 5m), avg(air_temp) AS \"Air Temp (°C)\", avg(air_humidity) AS \"Air Humidity (%)\", avg(light) AS \"Light (%)\" FROM readings WHERE $__timeFilter(ts) AND zone_id IN ($zone) AND zone_id <> 'e2e-test' AND device_id IN ($device) GROUP BY 1 ORDER BY 1;"
                 }
             ]
         },
@@ -103,11 +158,11 @@
             "id": 3,
             "type": "table",
             "title": "Device status",
-            "description": "Last reading per device. Age turns red if older than 10 minutes (600 s).",
+            "description": "Every registered device of the selected zones with its last reading. Age is red when the last reading is older than 15 minutes (3 reading intervals of 5 min), or 'never' when the device has not sent any reading yet; green otherwise.",
             "gridPos": {
-                "h": 7,
+                "h": 8,
                 "w": 12,
-                "x": 0,
+                "x": 12,
                 "y": 8
             },
             "datasource": {
@@ -117,6 +172,29 @@
             "fieldConfig": {
                 "defaults": {},
                 "overrides": [
+                    {
+                        "matcher": {
+                            "id": "byName",
+                            "options": "Last reading"
+                        },
+                        "properties": [
+                            {
+                                "id": "mappings",
+                                "value": [
+                                    {
+                                        "type": "special",
+                                        "options": {
+                                            "match": "null",
+                                            "result": {
+                                                "text": "never",
+                                                "index": 0
+                                            }
+                                        }
+                                    }
+                                ]
+                            }
+                        ]
+                    },
                     {
                         "matcher": {
                             "id": "byName",
@@ -138,10 +216,26 @@
                                         },
                                         {
                                             "color": "red",
-                                            "value": 600
+                                            "value": 900
                                         }
                                     ]
                                 }
+                            },
+                            {
+                                "id": "mappings",
+                                "value": [
+                                    {
+                                        "type": "special",
+                                        "options": {
+                                            "match": "null",
+                                            "result": {
+                                                "text": "never",
+                                                "color": "red",
+                                                "index": 0
+                                            }
+                                        }
+                                    }
+                                ]
                             },
                             {
                                 "id": "custom.cellOptions",
@@ -158,7 +252,7 @@
                     "refId": "A",
                     "format": "table",
                     "rawQuery": true,
-                    "rawSql": "SELECT DISTINCT ON (device_id) device_id AS \"Device\", zone_id AS \"Zone\", ts AS \"Last Reading\", EXTRACT(EPOCH FROM (now() - ts)) AS \"Age\" FROM readings WHERE zone_id IN ($zone) AND device_id IN ($device) ORDER BY device_id, ts DESC;"
+                    "rawSql": "SELECT d.id AS \"Device\", d.zone_id AS \"Zone\", r.ts AS \"Last reading\", EXTRACT(EPOCH FROM (now() - r.ts)) AS \"Age\" FROM devices d LEFT JOIN LATERAL (SELECT ts FROM readings WHERE device_id = d.id AND zone_id <> 'e2e-test' ORDER BY ts DESC LIMIT 1) r ON true WHERE d.zone_id IN ($zone) AND d.zone_id <> 'e2e-test' AND d.id IN ($device) ORDER BY d.id;"
                 }
             ]
         },
@@ -166,12 +260,12 @@
             "id": 4,
             "type": "stat",
             "title": "Water savings (rain-skipped decisions)",
-            "description": "Issue #22: Counts 'do not irrigate' decisions caused by rain and estimates saved liters against a fixed reference of 4.5 L per irrigation cycle. Update the reference once a baseline schedule is stored in the database.",
+            "description": "Counts 'do not irrigate' decisions caused by rain (irrigate = false AND reason ILIKE '%rain%') and estimates the liters saved as count x $baseline_liters (dashboard variable, default 4.5 L per cycle). The rain filter depends on the format of decisions.reason, which the decision service has not fixed yet: update it once that format is agreed. Replace the variable once a baseline schedule is stored in the database.",
             "gridPos": {
                 "h": 7,
                 "w": 12,
-                "x": 12,
-                "y": 8
+                "x": 0,
+                "y": 16
             },
             "datasource": {
                 "type": "postgres",
@@ -182,7 +276,31 @@
                     "refId": "A",
                     "format": "table",
                     "rawQuery": true,
-                    "rawSql": "SELECT count(*) FILTER (WHERE irrigate = false AND reason ILIKE '%rain%') AS \"Skipped (rain)\", round(count(*) FILTER (WHERE irrigate = false AND reason ILIKE '%rain%') * 4.5, 1) AS \"Est. Saved (L)\" FROM decisions WHERE $__timeFilter(decided_at) AND zone_id IN ($zone);"
+                    "rawSql": "SELECT count(*) AS \"Skipped (rain)\", round(count(*) * '${baseline_liters}'::numeric, 1) AS \"Est. Saved (L)\" FROM decisions WHERE $__timeFilter(decided_at) AND zone_id IN ($zone) AND zone_id <> 'e2e-test' AND irrigate = false AND reason ILIKE '%rain%';"
+                }
+            ]
+        },
+        {
+            "id": 6,
+            "type": "barchart",
+            "title": "Daily irrigation (liters & minutes)",
+            "description": "What was actually irrigated: irrigation_finished events reported by the devices of the selected zones (rejected or never executed commands are not counted). Minutes = sum of the reported duration_s / 60. Liters = water_l of the decision that sent each finished command (planned liters, not measured). Days in UTC.",
+            "gridPos": {
+                "h": 7,
+                "w": 12,
+                "x": 12,
+                "y": 16
+            },
+            "datasource": {
+                "type": "postgres",
+                "uid": "smart-gardening-pg"
+            },
+            "targets": [
+                {
+                    "refId": "A",
+                    "format": "table",
+                    "rawQuery": true,
+                    "rawSql": "SELECT date_trunc('day', e.ts) AS \"Day\", round(sum(COALESCE(d.water_l, 0)), 1) AS \"Liters\", round(sum(COALESCE(e.duration_s, 0)) / 60.0, 1) AS \"Minutes\" FROM irrigation_events e JOIN devices dev ON dev.id = e.device_id LEFT JOIN decisions d ON d.command_id = e.command_id WHERE e.type = 'irrigation_finished' AND $__timeFilter(e.ts) AND dev.zone_id IN ($zone) AND dev.zone_id <> 'e2e-test' GROUP BY 1 ORDER BY 1;"
                 }
             ]
         },
@@ -192,53 +310,6 @@
             "title": "Irrigation decisions",
             "gridPos": {
                 "h": 8,
-                "w": 12,
-                "x": 0,
-                "y": 15
-            },
-            "datasource": {
-                "type": "postgres",
-                "uid": "smart-gardening-pg"
-            },
-            "targets": [
-                {
-                    "refId": "A",
-                    "format": "table",
-                    "rawQuery": true,
-                    "rawSql": "SELECT decided_at AS \"Time\", zone_id AS \"Zone\", irrigate AS \"Irrigate\", duration_s AS \"Duration (s)\", water_l AS \"Water (L)\", reason AS \"Reason\" FROM decisions WHERE $__timeFilter(decided_at) AND zone_id IN ($zone) ORDER BY decided_at DESC;"
-                }
-            ]
-        },
-        {
-            "id": 6,
-            "type": "barchart",
-            "title": "Daily irrigation (liters & minutes)",
-            "gridPos": {
-                "h": 8,
-                "w": 12,
-                "x": 12,
-                "y": 15
-            },
-            "datasource": {
-                "type": "postgres",
-                "uid": "smart-gardening-pg"
-            },
-            "targets": [
-                {
-                    "refId": "A",
-                    "format": "table",
-                    "rawQuery": true,
-                    "rawSql": "SELECT date_trunc('day', decided_at) AS \"Day\", sum(COALESCE(water_l, 0)) AS \"Liters\", round(sum(COALESCE(duration_s, 0)) / 60.0, 1) AS \"Minutes\" FROM decisions WHERE $__timeFilter(decided_at) AND irrigate = true AND zone_id IN ($zone) GROUP BY 1 ORDER BY 1;"
-                }
-            ]
-        },
-        {
-            "id": 7,
-            "type": "table",
-            "title": "Irrigation events",
-            "description": "Device-reported events: irrigation_started, irrigation_finished, command_rejected.",
-            "gridPos": {
-                "h": 7,
                 "w": 24,
                 "x": 0,
                 "y": 23
@@ -252,7 +323,31 @@
                     "refId": "A",
                     "format": "table",
                     "rawQuery": true,
-                    "rawSql": "SELECT e.ts AS \"Time\", e.device_id AS \"Device\", d.zone_id AS \"Zone\", e.type AS \"Event\", e.duration_s AS \"Duration (s)\", e.reason AS \"Reason\" FROM irrigation_events e LEFT JOIN decisions d USING (command_id) WHERE $__timeFilter(e.ts) AND e.device_id IN ($device) ORDER BY e.ts DESC;"
+                    "rawSql": "SELECT decided_at AS \"Time\", zone_id AS \"Zone\", irrigate AS \"Irrigate\", duration_s AS \"Duration (s)\", water_l AS \"Water (L)\", reason AS \"Reason\" FROM decisions WHERE $__timeFilter(decided_at) AND zone_id IN ($zone) AND zone_id <> 'e2e-test' ORDER BY decided_at DESC;"
+                }
+            ]
+        },
+        {
+            "id": 7,
+            "type": "table",
+            "title": "Irrigation events",
+            "description": "Device-reported events: irrigation_started, irrigation_finished, command_rejected. Filtered by the zone of the reporting device and by device.",
+            "gridPos": {
+                "h": 7,
+                "w": 24,
+                "x": 0,
+                "y": 31
+            },
+            "datasource": {
+                "type": "postgres",
+                "uid": "smart-gardening-pg"
+            },
+            "targets": [
+                {
+                    "refId": "A",
+                    "format": "table",
+                    "rawQuery": true,
+                    "rawSql": "SELECT e.ts AS \"Time\", e.device_id AS \"Device\", dev.zone_id AS \"Zone\", e.type AS \"Event\", e.duration_s AS \"Duration (s)\", e.reason AS \"Reason\" FROM irrigation_events e JOIN devices dev ON dev.id = e.device_id WHERE $__timeFilter(e.ts) AND dev.zone_id IN ($zone) AND dev.zone_id <> 'e2e-test' AND e.device_id IN ($device) ORDER BY e.ts DESC;"
                 }
             ]
         }
