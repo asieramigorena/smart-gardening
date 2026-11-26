@@ -1,8 +1,10 @@
 """MQTT publisher for AWS IoT Core"""
-import sys
+import logging
 import threading
 
 import paho.mqtt.client as mqtt
+
+logger = logging.getLogger(__name__)
 
 PORT = 8883  # MQTT over TLS with X.509 client certificates
 QOS = 1  # contract: every message is QoS 1
@@ -31,21 +33,27 @@ class Publisher:
 
     def _on_connect(self, client, userdata, flags, reason_code, properties):
         if reason_code.is_failure:
-            print(f"connection refused by {self.cfg.endpoint}: {reason_code}", file=sys.stderr)
+            logger.error("connection refused by %s: %s", self.cfg.endpoint, reason_code)
         else:
-            print(f"connected to {self.cfg.endpoint}")
+            logger.info("connected to %s", self.cfg.endpoint)
             self._connected.set()
 
     def _on_connect_fail(self, client, userdata):
-        print(f"cannot reach {self.cfg.endpoint}:{PORT}; retrying (network down or wrong endpoint?)", file=sys.stderr)
+        logger.warning(
+            "cannot reach %s:%d; retrying (network down or wrong endpoint?)",
+            self.cfg.endpoint,
+            PORT,
+        )
 
     def _on_disconnect(self, client, userdata, flags, reason_code, properties):
         self._connected.clear()
         # AWS IoT Core closes the connection without an error code when the
         # certificate or the IoT policy is wrong: this is where that shows up.
         if reason_code != 0:
-            print(f"disconnected ({reason_code}); reconnecting. If it repeats, check the certificate and the IoT policy",
-                  file=sys.stderr)
+            logger.warning(
+                "disconnected (%s); reconnecting. If it repeats, check the certificate and the IoT policy",
+                reason_code,
+            )
 
     def start(self, wait_s=CONNECT_WAIT_S):
         """Connect in the background and wait up to `wait_s` for the first connection.
@@ -66,21 +74,21 @@ class Publisher:
         self.client.loop_start()
         if self._connected.wait(wait_s):
             return True
-        print(f"not connected after {wait_s} s; readings will be queued until it connects", file=sys.stderr)
+        logger.warning("not connected after %s s; readings will be queued until it connects", wait_s)
         return False
 
     def send(self, payload, timeout=15):
         """Publish an encoded reading. Returns True if the broker acknowledged it (PUBACK)."""
         info = self.client.publish(self.cfg.topic, payload, qos=QOS)
         if info.rc == mqtt.MQTT_ERR_NO_CONN:
-            print("not connected: reading queued, it will be sent on reconnect", file=sys.stderr)
+            logger.warning("not connected: reading queued, it will be sent on reconnect")
             return False
         if info.rc != mqtt.MQTT_ERR_SUCCESS:
-            print(f"reading dropped: {mqtt.error_string(info.rc)}", file=sys.stderr)
+            logger.error("reading dropped: %s", mqtt.error_string(info.rc))
             return False
         info.wait_for_publish(timeout)
         if not info.is_published():
-            print(f"no PUBACK within {timeout} s: paho keeps retrying", file=sys.stderr)
+            logger.warning("no PUBACK within %s s: paho keeps retrying", timeout)
             return False
         return True
 

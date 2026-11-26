@@ -1,5 +1,6 @@
 """Node service: periodic readings with APScheduler (--once, --dry-run)."""
 import argparse
+import logging
 import signal
 import socket
 import subprocess
@@ -11,6 +12,8 @@ from apscheduler.schedulers.blocking import BlockingScheduler
 from . import contract, sensors
 from .config import ConfigError, load_config
 from .publisher import Publisher
+
+logger = logging.getLogger(__name__)
 
 # The service must not be restarted in a loop for a config error (see setup.sh)
 EX_CONFIG = 78
@@ -27,14 +30,15 @@ def check_clock(now=None):
             capture_output=True, text=True, timeout=5, check=False,
         )
     except (OSError, subprocess.SubprocessError) as exc:
-        print(f"warning: could not check NTP sync ({exc})", file=sys.stderr)
+        logger.warning("could not check NTP sync (%s)", exc)
     else:
         if res.returncode != 0 or res.stdout.strip().lower() != "yes":
-            print("warning: system clock is not NTP-synchronized", file=sys.stderr)
+            logger.warning("system clock is not NTP-synchronized")
     if now.year < MIN_VALID_YEAR:
-        print(
-            f"system clock year is {now.year} (< {MIN_VALID_YEAR}); refusing to publish reading",
-            file=sys.stderr,
+        logger.error(
+            "system clock year is %s (< %s); refusing to publish reading",
+            now.year,
+            MIN_VALID_YEAR,
         )
         return False
     return True
@@ -50,7 +54,7 @@ def take_reading(
     errors = {}
     values = sensors.read_all(errors, adc_address=adc_address)
     for fields, error in errors.items():
-        print(f"sensor {fields} failed: {error}", file=sys.stderr)
+        logger.warning("sensor %s failed: %s", fields, error)
     return contract.build_reading(
         device_id, zone, datetime.now(timezone.utc), values,
         soil_raw_dry=soil_raw_dry, soil_raw_wet=soil_raw_wet,
@@ -68,15 +72,16 @@ def publish_reading(publisher, validator):
     try:
         payload = contract.encode(body, validator)
     except contract.ContractError as exc:  # rule 7: never send a message that breaks the contract
-        print(f"reading not sent, it breaks the contract: {exc}", file=sys.stderr)
+        logger.error("reading not sent, it breaks the contract: %s", exc)
         return False
     if publisher.send(payload):
-        print("sent", cfg.topic, payload.decode())
+        logger.info("sent %s %s", cfg.topic, payload.decode())
         return True
     return False
 
 
 def main():
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--once", action="store_true", help="publish one reading and exit")
@@ -88,7 +93,7 @@ def main():
         cfg = load_config()
     except (contract.ContractError, ConfigError) as exc:
         if not (args.dry_run and isinstance(exc, ConfigError)):
-            print(exc, file=sys.stderr)
+            logger.error("%s", exc)
             return EX_CONFIG
         cfg = None
 
@@ -114,7 +119,7 @@ def main():
     try:
         publisher = Publisher(cfg)
     except FileNotFoundError as exc:
-        print(exc, file=sys.stderr)
+        logger.error("%s", exc)
         return EX_CONFIG
     check_clock()
     publisher.start()
@@ -123,7 +128,7 @@ def main():
         try:
             ok = publish_reading(publisher, validator)
             if not ok:
-                print("reading not delivered", file=sys.stderr)
+                logger.error("reading not delivered")
             return 0 if ok else 1
         finally:
             publisher.stop()
@@ -137,7 +142,7 @@ def main():
     )
     # systemd stops the service with SIGTERM: leave through a clean disconnect
     signal.signal(signal.SIGTERM, lambda *_: scheduler.shutdown(wait=False))
-    print(f"publishing every {cfg.read_interval_s} s to {cfg.topic}")
+    logger.info("publishing every %s s to %s", cfg.read_interval_s, cfg.topic)
     try:
         scheduler.start()
     except KeyboardInterrupt:
